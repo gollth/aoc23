@@ -4,7 +4,7 @@ use bevy::{
     sprite::Anchor,
 };
 
-fn calibration(input: &str) -> u32 {
+pub fn calibration(input: &str) -> u32 {
     input
         .lines()
         .filter_map(|line| {
@@ -16,12 +16,12 @@ fn calibration(input: &str) -> u32 {
         .sum()
 }
 
-const FONT_SIZE: f32 = 60.0;
+const FONT_SIZE: f32 = 80.0;
 const CHAR_SIZE: f32 = FONT_SIZE / 2.0;
 const BOX_SPEED: f32 = 4.0;
 const ZOOM_SPEED: f32 = 4.0;
 const ZOOM_SENSITIVITY: f32 = 0.5;
-const CYCLE_TIME: f32 = 1.0;
+const CYCLE_TIME: f32 = 0.10;
 
 #[derive(Default, Debug, Clone, Copy)]
 enum State {
@@ -45,7 +45,10 @@ impl From<State> for Color {
 struct Scroll(f32);
 
 #[derive(Debug, Component)]
-struct Digit(Entity);
+struct Sum(Vec<Entity>);
+
+#[derive(Debug, Component)]
+struct Digit((Entity, u32));
 #[derive(Debug, Component)]
 struct Line(String);
 #[derive(Default, Debug, Component)]
@@ -106,6 +109,7 @@ fn setup(mut commands: Commands, file: Res<File>) {
         color: Color::WHITE,
         ..default()
     };
+    let mut digits = Vec::new();
     for (i, line) in input.lines().enumerate() {
         commands
             .spawn((
@@ -114,7 +118,7 @@ fn setup(mut commands: Commands, file: Res<File>) {
                     text: Text::from_section(line, style.clone())
                         .with_alignment(TextAlignment::Left),
                     transform: Transform::from_xyz(0., i as f32 * FONT_SIZE * line_scale, 0.),
-                    text_anchor: Anchor::TopLeft,
+                    text_anchor: Anchor::BottomLeft,
                     ..default()
                 },
             ))
@@ -122,7 +126,7 @@ fn setup(mut commands: Commands, file: Res<File>) {
                 let sprite = Sprite {
                     color: State::default().into(),
                     custom_size: Some(Vec2::new(CHAR_SIZE, FONT_SIZE)),
-                    anchor: Anchor::TopLeft,
+                    anchor: Anchor::BottomLeft,
                     ..default()
                 };
                 let first = Box {
@@ -154,42 +158,71 @@ fn setup(mut commands: Commands, file: Res<File>) {
                         last,
                     ))
                     .id();
-                parent.spawn((
-                    Digit(right),
-                    Text2dBundle {
-                        text: Text::from_section(
-                            "-",
-                            TextStyle {
-                                font_size: FONT_SIZE,
-                                color: Color::GRAY,
-                                ..default()
-                            },
-                        )
-                        .with_alignment(TextAlignment::Left),
-                        transform: Transform::from_xyz(-CHAR_SIZE, 0., 0.),
-                        text_anchor: Anchor::TopRight,
-                        ..default()
-                    },
-                ));
-                parent.spawn((
-                    Digit(left),
-                    Text2dBundle {
-                        text: Text::from_section(
-                            "-",
-                            TextStyle {
-                                font_size: FONT_SIZE,
-                                color: Color::GRAY,
-                                ..default()
-                            },
-                        )
-                        .with_alignment(TextAlignment::Left),
-                        transform: Transform::from_xyz(-2. * CHAR_SIZE, 0., 0.),
-                        text_anchor: Anchor::TopRight,
-                        ..default()
-                    },
-                ));
+                let right = parent
+                    .spawn((
+                        Digit((right, 1)),
+                        Text2dBundle {
+                            text: Text::from_section(
+                                "-",
+                                TextStyle {
+                                    font_size: FONT_SIZE,
+                                    color: Color::GRAY,
+                                    ..default()
+                                },
+                            )
+                            .with_alignment(TextAlignment::Left),
+                            transform: Transform::from_xyz(-CHAR_SIZE, 0., 0.),
+                            text_anchor: Anchor::BottomRight,
+                            ..default()
+                        },
+                    ))
+                    .id();
+                let left = parent
+                    .spawn((
+                        Digit((left, 10)),
+                        Text2dBundle {
+                            text: Text::from_section(
+                                "-",
+                                TextStyle {
+                                    font_size: FONT_SIZE,
+                                    color: Color::GRAY,
+                                    ..default()
+                                },
+                            )
+                            .with_alignment(TextAlignment::Left),
+                            transform: Transform::from_xyz(-2. * CHAR_SIZE, 0., 0.),
+                            text_anchor: Anchor::BottomRight,
+                            ..default()
+                        },
+                    ))
+                    .id();
+                digits.push(left);
+                digits.push(right);
             });
     }
+    commands.spawn((
+        Sum(digits),
+        Text2dBundle {
+            text: Text::from_section(
+                "---",
+                TextStyle {
+                    font_size: FONT_SIZE,
+                    color: Color::GRAY,
+                    ..default()
+                },
+            )
+            .with_alignment(TextAlignment::Right),
+            transform: Transform::from_xyz(-CHAR_SIZE, -FONT_SIZE / 2., 0.),
+            text_anchor: Anchor::TopRight,
+            ..default()
+        },
+    ));
+    commands.spawn(Text2dBundle {
+        text: Text::from_section("SUM", style.clone()).with_alignment(TextAlignment::Right),
+        transform: Transform::from_xyz(0., -FONT_SIZE / 2., 0.),
+        text_anchor: Anchor::TopLeft,
+        ..default()
+    });
 }
 
 fn handle_keys(mut state: ResMut<GameState>, keys: Res<Input<KeyCode>>) {
@@ -257,7 +290,7 @@ fn box_color(mut query: Query<(&Box, &mut Sprite)>) {
 fn digit_setter(mut query: Query<(&Digit, &mut Text)>, boxes: Query<&Box>) {
     for (digit, mut text) in query.iter_mut() {
         match boxes
-            .get(digit.0)
+            .get(digit.0 .0)
             .expect("Digit to reference an Entity with a `Box` component")
             .state
         {
@@ -270,6 +303,35 @@ fn digit_setter(mut query: Query<(&Digit, &mut Text)>, boxes: Query<&Box>) {
                 text.sections[0].style.color = Color::GRAY;
             }
         }
+    }
+}
+
+fn sum_setter(mut query: Query<(&Sum, &mut Text)>, digits: Query<&Digit>, boxes: Query<&Box>) {
+    for (sum, mut text) in query.iter_mut() {
+        text.sections[0].style.color = Color::WHITE;
+        let sum = sum
+            .0
+            .iter()
+            .map(|id| {
+                digits
+                    .get(*id)
+                    .expect("Sum to reference an Entity with a `Digit` component")
+                    .0
+            })
+            .map(|digit| {
+                match boxes
+                    .get(digit.0)
+                    .expect("Digit to reference an Entity with a `Box` component")
+                    .state
+                {
+                    State::Found(i) => i * digit.1,
+                    _ => 0,
+                }
+            })
+            .sum::<u32>()
+            .to_string();
+        println!("Solution A: {sum}");
+        text.sections[0].value = sum;
     }
 }
 
@@ -294,6 +356,7 @@ fn main() {
                 box_movement,
                 box_color,
                 digit_setter,
+                sum_setter,
             ),
         )
         .run()
