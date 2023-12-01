@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
     sprite::Anchor,
 };
+use clap::Parser;
 
 pub fn calibration(input: &str) -> u32 {
     input
@@ -21,7 +22,6 @@ const CHAR_SIZE: f32 = FONT_SIZE / 2.0;
 const BOX_SPEED: f32 = 4.0;
 const ZOOM_SPEED: f32 = 4.0;
 const ZOOM_SENSITIVITY: f32 = 0.5;
-const CYCLE_TIME: f32 = 0.10;
 
 #[derive(Default, Debug, Clone, Copy)]
 enum State {
@@ -101,8 +101,7 @@ fn setup(mut commands: Commands, file: Res<File>) {
             ..default()
         },
     ));
-    let path = format!("{}/first.txt", file.0);
-    let input = std::fs::read_to_string(&path).expect(&path);
+    let input = std::fs::read_to_string(&file.0).expect(&file.0);
     let line_scale = 1.05;
     let style = TextStyle {
         font_size: FONT_SIZE,
@@ -328,23 +327,35 @@ fn sum_setter(mut query: Query<(&Sum, &mut Text)>, digits: Query<&Digit>, boxes:
                     _ => 0,
                 }
             })
-            .sum::<u32>()
-            .to_string();
+            .sum::<u32>();
+        if sum == 0 {
+            continue;
+        }
         println!("Solution A: {sum}");
-        text.sections[0].value = sum;
+        text.sections[0].value = sum.to_string();
     }
 }
 
+#[derive(Debug, Parser)]
+struct Options {
+    /// Path to the file with the input data
+    #[clap(short, long, default_value = "sample/first.txt")]
+    input: String,
+
+    /// How often to execute each step (Hz)
+    #[clap(short, long, default_value_t = 1.)]
+    frequency: f32,
+}
+
 fn main() {
+    let args = Options::parse();
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(File(
-            std::env::args()
-                .skip(1)
-                .next()
-                .unwrap_or("sample".to_string()),
-        ))
-        .insert_resource(Tick(Timer::from_seconds(CYCLE_TIME, TimerMode::Repeating)))
+        .insert_resource(File(args.input))
+        .insert_resource(Tick(Timer::from_seconds(
+            1. / args.frequency,
+            TimerMode::Repeating,
+        )))
         .insert_resource(GameState::default())
         .add_systems(Startup, setup)
         .add_systems(
