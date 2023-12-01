@@ -1,3 +1,4 @@
+use aoc23::Part;
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
@@ -5,16 +6,31 @@ use bevy::{
 };
 use clap::Parser;
 
-pub fn calibration(input: &str) -> u32 {
-    input
-        .lines()
-        .filter_map(|line| {
-            let first = line.chars().find_map(|c| c.to_digit(10))?;
-            let last = line.chars().rev().find_map(|c| c.to_digit(10))?;
-            Some((first, last))
-        })
-        .map(|(first, last)| first * 10 + last)
-        .sum()
+pub fn calibration(input: &str, part: Part) -> u32 {
+    match part {
+        Part::One => input
+            .lines()
+            .filter_map(|line| {
+                let first = line.chars().find_map(|c| c.to_digit(10))?;
+                let last = line.chars().rev().find_map(|c| c.to_digit(10))?;
+                Some((first, last))
+            })
+            .map(|(first, last)| first * 10 + last)
+            .sum(),
+        Part::Two => calibration(
+            &input
+                .replace("one", "one1one")
+                .replace("two", "two2two")
+                .replace("three", "three3three")
+                .replace("four", "four4four")
+                .replace("five", "five5five")
+                .replace("six", "six6six")
+                .replace("seven", "seven7seven")
+                .replace("eight", "eight8eight")
+                .replace("nine", "nine9nine"),
+            Part::One,
+        ),
+    }
 }
 
 const FONT_SIZE: f32 = 80.0;
@@ -377,8 +393,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sample() {
-        let sample = include_str!("../../sample/first.txt");
-        assert_eq!(142, calibration(sample))
+    fn solution_a() {
+        let sample = include_str!("../../sample/first-a.txt");
+        assert_eq!(142, calibration(sample, Part::One));
+    }
+
+    #[test]
+    fn solution_b() {
+        let sample = include_str!("../../sample/first-b.txt");
+        assert_eq!(281, calibration(sample, Part::Two));
     }
 }
