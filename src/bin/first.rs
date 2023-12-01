@@ -61,8 +61,7 @@ impl Box {
     fn step(&mut self, line: &str) {
         let c = line
             .chars()
-            .skip(self.index as usize)
-            .next()
+            .nth(self.index as usize)
             .and_then(|c| c.to_digit(10));
 
         self.state = match (&self.state, c) {
@@ -217,7 +216,7 @@ fn setup(mut commands: Commands, file: Res<File>) {
         },
     ));
     commands.spawn(Text2dBundle {
-        text: Text::from_section("SUM", style.clone()).with_alignment(TextAlignment::Right),
+        text: Text::from_section("SUM", style).with_alignment(TextAlignment::Right),
         transform: Transform::from_xyz(0., -FONT_SIZE / 2., 0.),
         text_anchor: Anchor::TopLeft,
         ..default()
@@ -298,7 +297,7 @@ fn digit_setter(mut query: Query<(&Digit, &mut Text)>, boxes: Query<&Box>) {
                 text.sections[0].style.color = Color::WHITE;
             }
             _ => {
-                text.sections[0].value = format!("-");
+                text.sections[0].value = "-".to_string();
                 text.sections[0].style.color = Color::GRAY;
             }
         }
