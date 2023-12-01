@@ -45,6 +45,8 @@ impl From<State> for Color {
 struct Scroll(f32);
 
 #[derive(Debug, Component)]
+struct Digit(Entity);
+#[derive(Debug, Component)]
 struct Line(String);
 #[derive(Default, Debug, Component)]
 struct Box {
@@ -133,20 +135,58 @@ fn setup(mut commands: Commands, file: Res<File>) {
                     direction: -1,
                     ..default()
                 };
+                let left = parent
+                    .spawn((
+                        SpriteBundle {
+                            sprite: sprite.clone(),
+                            ..default()
+                        },
+                        first,
+                    ))
+                    .id();
+                let right = parent
+                    .spawn((
+                        SpriteBundle {
+                            sprite,
+                            transform: (&last).into(),
+                            ..default()
+                        },
+                        last,
+                    ))
+                    .id();
                 parent.spawn((
-                    SpriteBundle {
-                        sprite: sprite.clone(),
+                    Digit(right),
+                    Text2dBundle {
+                        text: Text::from_section(
+                            "-",
+                            TextStyle {
+                                font_size: FONT_SIZE,
+                                color: Color::GRAY,
+                                ..default()
+                            },
+                        )
+                        .with_alignment(TextAlignment::Left),
+                        transform: Transform::from_xyz(-CHAR_SIZE, 0., 0.),
+                        text_anchor: Anchor::TopRight,
                         ..default()
                     },
-                    first,
                 ));
                 parent.spawn((
-                    SpriteBundle {
-                        sprite,
-                        transform: (&last).into(),
+                    Digit(left),
+                    Text2dBundle {
+                        text: Text::from_section(
+                            "-",
+                            TextStyle {
+                                font_size: FONT_SIZE,
+                                color: Color::GRAY,
+                                ..default()
+                            },
+                        )
+                        .with_alignment(TextAlignment::Left),
+                        transform: Transform::from_xyz(-2. * CHAR_SIZE, 0., 0.),
+                        text_anchor: Anchor::TopRight,
                         ..default()
                     },
-                    last,
                 ));
             });
     }
@@ -214,6 +254,25 @@ fn box_color(mut query: Query<(&Box, &mut Sprite)>) {
     }
 }
 
+fn digit_setter(mut query: Query<(&Digit, &mut Text)>, boxes: Query<&Box>) {
+    for (digit, mut text) in query.iter_mut() {
+        match boxes
+            .get(digit.0)
+            .expect("Digit to reference an Entity with a `Box` component")
+            .state
+        {
+            State::Found(d) => {
+                text.sections[0].value = format!("{d}");
+                text.sections[0].style.color = Color::WHITE;
+            }
+            _ => {
+                text.sections[0].value = format!("-");
+                text.sections[0].style.color = Color::GRAY;
+            }
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -228,7 +287,14 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (update, handle_keys, handle_mouse, box_movement, box_color),
+            (
+                update,
+                handle_keys,
+                handle_mouse,
+                box_movement,
+                box_color,
+                digit_setter,
+            ),
         )
         .run()
 }
