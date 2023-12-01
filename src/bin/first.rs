@@ -1,5 +1,5 @@
 use bevy::{
-    input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
+    input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
     sprite::Anchor,
 };
@@ -80,13 +80,15 @@ impl From<&Box> for Transform {
 
 #[derive(Resource)]
 struct Tick(Timer);
+#[derive(Resource)]
+struct File(String);
 
 #[derive(Default, Resource)]
 struct GameState {
     run: bool,
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, file: Res<File>) {
     commands.spawn((
         Scroll(1.),
         Camera2dBundle {
@@ -94,8 +96,8 @@ fn setup(mut commands: Commands) {
             ..default()
         },
     ));
-    let input = std::fs::read_to_string("input/first.txt").expect("input/first.txt");
-    // let input = std::fs::read_to_string("sample/first.txt").expect("sample/first.txt");
+    let path = format!("{}/first.txt", file.0);
+    let input = std::fs::read_to_string(&path).expect(&path);
     let line_scale = 1.05;
     let style = TextStyle {
         font_size: FONT_SIZE,
@@ -215,6 +217,12 @@ fn box_color(mut query: Query<(&Box, &mut Sprite)>) {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .insert_resource(File(
+            std::env::args()
+                .skip(1)
+                .next()
+                .unwrap_or("sample".to_string()),
+        ))
         .insert_resource(Tick(Timer::from_seconds(CYCLE_TIME, TimerMode::Repeating)))
         .insert_resource(GameState::default())
         .add_systems(Startup, setup)
