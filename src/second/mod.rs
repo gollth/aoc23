@@ -28,6 +28,16 @@ impl Game {
                 .all(|(color, n)| n <= bag.get(color).unwrap_or(&0))
         })
     }
+    pub fn fewest(&self) -> HashMap<Color, u32> {
+        self.rounds.iter().fold(HashMap::new(), |mut a, round| {
+            for (color, n) in round.0.iter() {
+                let x = a.entry(*color).or_insert(0);
+                *x = *n.max(x);
+            }
+            a
+        })
+    }
+
     pub fn id(&self) -> u32 {
         self.id
     }
@@ -62,5 +72,14 @@ mod tests {
     ]})]
     fn game_fromstr(#[case] s: &str, #[case] expected: Game) {
         assert_eq!(expected, Game::from_str(s).unwrap());
+    }
+
+    #[rstest]
+    #[case("Game 1: 3 blue", &[(Color::Blue, 3)])]
+    #[case("Game 1: 3 blue; 4 blue", &[(Color::Blue, 4)])]
+    #[case("Game 1: 4 green; 2 green", &[(Color::Green, 4)])]
+    #[case("Game 1: 7 blue, 2 green; 2 blue; 2 red, 12 green", &[(Color::Blue, 7), (Color::Green, 12), (Color::Red, 2)])]
+    fn fewest(#[case] game: Game, #[case] expected: &[(Color, u32)]) {
+        assert_eq!(expected.iter().copied().collect::<HashMap<_,_>>(), game.fewest());
     }
 }

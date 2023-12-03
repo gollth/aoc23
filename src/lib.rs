@@ -1,6 +1,8 @@
 pub mod second;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+use clap::ValueEnum;
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, ValueEnum)]
 pub enum Part {
     One,
     Two,
