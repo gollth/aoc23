@@ -1,9 +1,5 @@
-use aoc23::Part;
-use bevy::{
-    input::mouse::{MouseMotion, MouseWheel},
-    prelude::*,
-    sprite::Anchor,
-};
+use aoc23::{mouse, toggle_running, Part, Running, Scroll, Tick};
+use bevy::{prelude::*, sprite::Anchor};
 use clap::Parser;
 
 pub fn calibration(input: &str, part: Part) -> u32 {
@@ -36,8 +32,6 @@ pub fn calibration(input: &str, part: Part) -> u32 {
 const FONT_SIZE: f32 = 80.0;
 const CHAR_SIZE: f32 = FONT_SIZE / 2.0;
 const BOX_SPEED: f32 = 4.0;
-const ZOOM_SPEED: f32 = 4.0;
-const ZOOM_SENSITIVITY: f32 = 0.5;
 
 #[derive(Default, Debug, Clone, Copy)]
 enum State {
@@ -56,9 +50,6 @@ impl From<State> for Color {
         }
     }
 }
-
-#[derive(Debug, Component)]
-struct Scroll(f32);
 
 #[derive(Debug, Component)]
 struct Sum(Vec<Entity>);
@@ -99,14 +90,7 @@ impl From<&Box> for Transform {
 }
 
 #[derive(Resource)]
-struct Tick(Timer);
-#[derive(Resource)]
 struct File(String);
-
-#[derive(Default, Resource)]
-struct GameState {
-    run: bool,
-}
 
 fn setup(mut commands: Commands, file: Res<File>) {
     commands.spawn((
@@ -239,45 +223,17 @@ fn setup(mut commands: Commands, file: Res<File>) {
     });
 }
 
-fn handle_keys(mut state: ResMut<GameState>, keys: Res<Input<KeyCode>>) {
-    if keys.just_released(KeyCode::Space) {
-        state.run ^= true;
-    }
-}
-
-fn handle_mouse(
-    time: Res<Time>,
-    mouse: Res<Input<MouseButton>>,
-    mut motion: EventReader<MouseMotion>,
-    mut scroll: EventReader<MouseWheel>,
-    mut query: Query<(&mut Scroll, &mut Transform), With<Camera>>,
-) {
-    let pressed = mouse.any_pressed([MouseButton::Left, MouseButton::Right]);
-    let motion = motion.read().map(|ev| ev.delta).sum::<Vec2>();
-    let delta = scroll.read().map(|ev| ev.y).sum::<f32>();
-
-    for (mut scroll, mut tf) in query.iter_mut() {
-        scroll.0 += delta * ZOOM_SENSITIVITY;
-        let mut s = tf.scale.x;
-        s += ZOOM_SPEED * (scroll.0.exp() - s) * time.delta_seconds();
-        tf.scale = Vec3::splat(s);
-        if pressed {
-            tf.translation += Vec3::new(-motion.x, motion.y, 0.) * s;
-        }
-    }
-}
-
 fn update(
     time: Res<Time>,
+    run: Res<Running>,
     mut timer: ResMut<Tick>,
-    state: Res<GameState>,
     parents: Query<&Line>,
     mut query_boxes: Query<(&Parent, &mut Box)>,
 ) {
-    if !state.run {
+    if !run.inner() {
         return;
     }
-    if !timer.0.tick(time.delta()).just_finished() {
+    if !timer.inner().tick(time.delta()).just_finished() {
         return;
     }
     for (parent, mut bx) in query_boxes.iter_mut() {
@@ -367,18 +323,15 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(File(args.input))
-        .insert_resource(Tick(Timer::from_seconds(
-            1. / args.frequency,
-            TimerMode::Repeating,
-        )))
-        .insert_resource(GameState::default())
+        .insert_resource(Tick::new(args.frequency))
+        .insert_resource(Running::default())
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 update,
-                handle_keys,
-                handle_mouse,
+                toggle_running,
+                mouse,
                 box_movement,
                 box_color,
                 digit_setter,

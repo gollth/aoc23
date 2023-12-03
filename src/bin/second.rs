@@ -1,11 +1,10 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use aoc23::{
-    second::{Color, Game},
+    second::{animation, Color, Game, BAG},
     Part,
 };
 use clap::Parser;
-use lazy_static::lazy_static;
 
 /// Day 2: Cube Conundrum
 #[derive(Debug, Parser)]
@@ -16,13 +15,14 @@ struct Options {
 
     /// Which part of the day to solve
     part: Part,
-}
 
-lazy_static! {
-    static ref BAG: HashMap<Color, u32> =
-        vec![(Color::Red, 12), (Color::Green, 13), (Color::Blue, 14)]
-            .into_iter()
-            .collect();
+    /// Should the solution be animated?
+    #[clap(short, long)]
+    animate: bool,
+
+    /// How often to execute each step (Hz)
+    #[clap(short, long, default_value_t = 1.)]
+    frequency: f32,
 }
 
 fn possible_game_ids(input: &str) -> impl Iterator<Item = u32> + '_ {
@@ -53,6 +53,8 @@ fn main() -> anyhow::Result<()> {
         Part::Two => powers(&input).sum(),
     };
     println!("Solution Part {:?}: {answer}", args.part);
+
+    animation::run(&input, args.frequency, args.part);
 
     Ok(())
 }

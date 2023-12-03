@@ -1,16 +1,28 @@
-mod parser;
+pub mod animation;
+pub mod parser;
 
 use crate::second::parser::parse_game;
 use anyhow::anyhow;
+use bevy::prelude::Component;
+use enum_iterator::Sequence;
+use lazy_static::lazy_static;
 use nom::Finish;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+lazy_static! {
+    pub static ref BAG: HashMap<Color, u32> =
+        vec![(Color::Red, 12), (Color::Green, 13), (Color::Blue, 14)]
+            .into_iter()
+            .collect();
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy, Component, Default, Sequence)]
 pub enum Color {
-    Blue,
+    #[default]
     Red,
     Green,
+    Blue,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -66,9 +78,9 @@ mod tests {
     #[case("Game 3: 5 blue, 1 green", Game { id: 3, rounds: vec![Round([(Color::Blue, 5), (Color::Green, 1)].into_iter().collect())] })]
     #[case("Game 4: 8 blue, 3 green, 2 red", Game { id: 4, rounds: vec![Round([(Color::Blue, 8), (Color::Green, 3), (Color::Red, 2)].into_iter().collect())] })]
     #[case("Game 5: 8 blue; 3 green; 2 red", Game { id: 5, rounds: vec![
-        Round([(Color::Blue, 8)].into_iter().collect()), 
-        Round([(Color::Green, 3)].into_iter().collect()), 
-        Round([(Color::Red, 2)].into_iter().collect()), 
+        Round([(Color::Blue, 8)].into_iter().collect()),
+        Round([(Color::Green, 3)].into_iter().collect()),
+        Round([(Color::Red, 2)].into_iter().collect()),
     ]})]
     fn game_fromstr(#[case] s: &str, #[case] expected: Game) {
         assert_eq!(expected, Game::from_str(s).unwrap());
@@ -80,6 +92,9 @@ mod tests {
     #[case("Game 1: 4 green; 2 green", &[(Color::Green, 4)])]
     #[case("Game 1: 7 blue, 2 green; 2 blue; 2 red, 12 green", &[(Color::Blue, 7), (Color::Green, 12), (Color::Red, 2)])]
     fn fewest(#[case] game: Game, #[case] expected: &[(Color, u32)]) {
-        assert_eq!(expected.iter().copied().collect::<HashMap<_,_>>(), game.fewest());
+        assert_eq!(
+            expected.iter().copied().collect::<HashMap<_, _>>(),
+            game.fewest()
+        );
     }
 }
