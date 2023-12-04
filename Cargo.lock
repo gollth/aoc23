@@ -237,6 +237,7 @@ dependencies = [
  "bevy",
  "clap",
  "enum-iterator",
+ "euclid",
  "itertools",
  "lazy_static",
  "nom",
