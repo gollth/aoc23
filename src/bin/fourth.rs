@@ -1,4 +1,8 @@
-use std::{collections::HashSet, ops::Add, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    ops::Add,
+    str::FromStr,
+};
 
 use anyhow::anyhow;
 use aoc23::Part;
@@ -23,16 +27,10 @@ struct Options {
     part: Part,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Scratchcard {
-    winners: HashSet<u32>,
-    choices: HashSet<u32>,
-}
-
-impl Scratchcard {
-    fn wins(&self) -> usize {
-        self.winners.intersection(&self.choices).count()
-    }
+    id: u32,
+    wins: u32,
 }
 
 impl FromStr for Scratchcard {
@@ -43,9 +41,9 @@ impl FromStr for Scratchcard {
 }
 
 fn parse_card(s: &str) -> IResult<&str, Scratchcard> {
-    let card = tuple((tag("Card"), space1, u32, tag(":"), space1));
-    let (s, winners) = preceded(card, separated_list1(space1, u32))
-        .map(|list| HashSet::from_iter(list.into_iter()))
+    let (s, (_, _, id, _, _)) = tuple((tag("Card"), space1, u32, tag(":"), space1))(s)?;
+    let (s, winners) = separated_list1(space1, u32)
+        .map(|list| HashSet::<u32>::from_iter(list.into_iter()))
         .parse(s)?;
     let (s, choices) = preceded(
         tuple((space1, tag("|"), space1)),
@@ -53,7 +51,9 @@ fn parse_card(s: &str) -> IResult<&str, Scratchcard> {
     )
     .map(|list| HashSet::from_iter(list.into_iter()))
     .parse(s)?;
-    Ok((s, Scratchcard { winners, choices }))
+
+    let wins = winners.intersection(&choices).count() as u32;
+    Ok((s, Scratchcard { id, wins }))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -65,11 +65,32 @@ fn main() -> anyhow::Result<()> {
         Part::One => input
             .lines()
             .map(Scratchcard::from_str)
-            .map_ok(|card| card.wins())
+            .map_ok(|card| card.wins)
             .filter_ok(|wins| *wins > 0)
             .map_ok(|wins| 1 << (wins - 1))
             .fold_ok(0, Add::add)?,
-        Part::Two => unimplemented!(),
+
+        Part::Two => {
+            let mut cards = HashMap::new();
+            let originals = input
+                .lines()
+                .map(|line| Scratchcard::from_str(line).expect("Parsing ok"))
+                .map(|card| (card.id, card))
+                .collect::<HashMap<_, _>>();
+
+            let mut queue = VecDeque::from_iter(originals.values());
+
+            while let Some(card) = queue.pop_front() {
+                cards
+                    .entry(card.id)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+                queue.extend(
+                    ((card.id + 1)..=(card.id + card.wins)).filter_map(|id| originals.get(&id)),
+                );
+            }
+            cards.values().sum()
+        }
     };
     println!("Solution part {part:?}: {solution}", part = args.part);
     Ok(())
@@ -77,6 +98,7 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -84,9 +106,39 @@ mod tests {
         let input = include_str!("../../sample/fourth.txt");
         let cards = input
             .lines()
-            .filter_map(|line| Scratchcard::from_str(line).ok())
-            .map(|card| card.wins())
+            .map(|line| Scratchcard::from_str(line).expect("Parsing ok"))
+            .map(|card| card.wins)
             .collect::<Vec<_>>();
         assert_eq!(vec![4, 2, 2, 1, 0, 0], cards);
+    }
+
+    #[test]
+    fn sample_b() {
+        let input = include_str!("../../sample/fourth.txt");
+        let mut cards = HashMap::new();
+        let originals = input
+            .lines()
+            .map(|line| Scratchcard::from_str(line).expect("Parsing ok"))
+            .map(|card| (card.id, card))
+            .collect::<HashMap<_, _>>();
+
+        let mut queue = VecDeque::from_iter(originals.values());
+
+        while let Some(card) = queue.pop_front() {
+            cards
+                .entry(card.id)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+            queue.extend(
+                ((card.id + 1)..=(card.id + card.wins)).map(|id| originals.get(&id).unwrap()),
+            );
+        }
+
+        assert_eq!(Some(&1), cards.get(&1), "Card #1");
+        assert_eq!(Some(&2), cards.get(&2), "Card #2");
+        assert_eq!(Some(&4), cards.get(&3), "Card #3");
+        assert_eq!(Some(&8), cards.get(&4), "Card #4");
+        assert_eq!(Some(&14), cards.get(&5), "Card #5");
+        assert_eq!(Some(&1), cards.get(&6), "Card #6");
     }
 }
