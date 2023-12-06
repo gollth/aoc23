@@ -11,3 +11,11 @@ Merry Christmas =)
 
 ### Part One
 ![Animation of Day 02 part one](img/second.gif)
+
+## Day 05
+
+### Part One
+![Animation of Day 05 part one](img/fifth-a.gif)
+
+### Part Two
+![Animation of Day 05 part two](img/fifth-b.gif)

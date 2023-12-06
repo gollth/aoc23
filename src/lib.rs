@@ -75,3 +75,15 @@ pub fn toggle_running(keys: Res<Input<KeyCode>>, mut run: ResMut<Running>) {
         run.0 ^= true;
     }
 }
+
+pub(crate) fn rect(x: f32, y: f32, z: f32, w: f32, h: f32, color: Color) -> SpriteBundle {
+    SpriteBundle {
+        sprite: Sprite {
+            color,
+            custom_size: Some(Vec2::new(w, h)),
+            ..default()
+        },
+        transform: Transform::from_xyz(x, y, z),
+        ..default()
+    }
+}

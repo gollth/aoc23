@@ -1,4 +1,7 @@
-use aoc23::{fifth::Almanac, Part};
+use aoc23::{
+    fifth::{animation, Almanac},
+    Part,
+};
 
 use anyhow::Result;
 use clap::Parser;
@@ -12,6 +15,14 @@ struct Options {
 
     /// Which part of the day to solve
     part: Part,
+
+    /// Should the solution be animated?
+    #[clap(short, long)]
+    animate: bool,
+
+    /// How often to execute each step (Hz)
+    #[clap(short, long, default_value_t = 1.)]
+    frequency: f32,
 }
 
 fn main() -> Result<()> {
@@ -20,5 +31,9 @@ fn main() -> Result<()> {
     let (almanac, seeds) = Almanac::parse(args.part, &input)?;
     let solution = almanac.best_location(&seeds);
     println!("Solution part {:?}: {solution}", args.part);
+
+    if args.animate {
+        animation::run(almanac, &seeds, args.frequency);
+    }
     Ok(())
 }

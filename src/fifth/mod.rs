@@ -1,3 +1,4 @@
+pub mod animation;
 mod parser;
 
 use std::{collections::HashMap, fmt::Debug, iter::once, ops::Range, str::FromStr};
@@ -8,11 +9,12 @@ use crate::{
 };
 
 use anyhow::{anyhow, Result};
+use bevy::prelude::{Component, Resource as BevyResource};
 use enum_iterator::{all, Sequence};
 use nom::{bytes::complete::tag, sequence::preceded, Finish};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct Mapping {
+pub(crate) struct Mapping {
     range: Range<i128>,
     offset: i128,
 }
@@ -25,10 +27,16 @@ impl Mapping {
     fn len(&self) -> i128 {
         self.range.end - self.range.start
     }
+
+    pub(crate) fn takeover() -> Self {
+        Self::new(0..i128::MAX, 0)
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence)]
-enum Resource {
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Component)]
+pub(crate) enum Resource {
+    #[default]
+    Seed,
     Soil,
     Fertilizer,
     Water,
@@ -38,7 +46,7 @@ enum Resource {
     Location,
 }
 
-#[derive(Debug)]
+#[derive(Debug, BevyResource)]
 pub struct Almanac(HashMap<Resource, Vec<Mapping>>);
 
 impl FromStr for Almanac {
@@ -59,15 +67,17 @@ impl Almanac {
         Ok((almanac, seeds))
     }
 
+    pub(crate) fn mappings(&self, resource: Resource) -> &[Mapping] {
+        self.0
+            .get(&resource)
+            .unwrap_or_else(|| panic!("Almanac to contain mapping to {resource:?}"))
+    }
+
     pub fn best_location(&self, seeds: &[Range<i128>]) -> i128 {
         all::<Resource>()
+            .filter(|r| *r != Resource::Seed)
             .fold(seeds.to_vec(), |ranges, resource| {
-                // dbg!(&resource, &ranges);
-                let mappings = self
-                    .0
-                    .get(&resource)
-                    .unwrap_or_else(|| panic!("Almanac to contain mapping to {resource:?}"));
-                propagate(&ranges, mappings)
+                propagate(&ranges, self.mappings(resource))
             })
             .iter()
             .map(|r| r.start)
@@ -76,48 +86,56 @@ impl Almanac {
     }
 }
 
-fn propagate(rs: &[Range<i128>], ts: &[Mapping]) -> Vec<Range<i128>> {
+pub(crate) fn propagate_once(
+    ranges: &[Range<i128>],
+    t: &Mapping,
+) -> (Vec<Range<i128>>, Vec<Range<i128>>) {
+    let mut news = Vec::new();
+    let mut olds = Vec::new();
+    for range in ranges {
+        if range.end <= t.range.start {
+            // other range is entirely to the right of us
+            olds.push(range.clone());
+            continue;
+        }
+        if t.range.end <= range.start {
+            // other range is entirely to the left of us
+            olds.push(range.clone());
+            continue;
+        }
+
+        if t.range.start < range.start && t.range.end < range.end {
+            // other range starts left from us and stops inside our range
+            olds.push(t.range.end..range.end);
+            news.push(range.start + t.offset..t.range.end + t.offset);
+            continue;
+        }
+        if range.start < t.range.start && range.end < t.range.end {
+            // other range starts inside our and stops outside our range
+            olds.push(range.start..t.range.start);
+            news.push(t.range.start + t.offset..range.end + t.offset);
+            continue;
+        }
+        if (range.end - range.start) < t.len() {
+            // other range covers entirely our range
+            news.push(range.start + t.offset..range.end + t.offset);
+            continue;
+        }
+
+        // other range is entirely inside our range
+        olds.push(range.start..t.range.start);
+        olds.push(t.range.end..range.end);
+        news.push(t.range.start + t.offset..t.range.end + t.offset);
+    }
+    (olds, news)
+}
+
+pub(crate) fn propagate(rs: &[Range<i128>], ts: &[Mapping]) -> Vec<Range<i128>> {
     let mut ranges = rs.to_vec();
     ts.iter()
-        .chain(once(&Mapping::new(0..i128::MAX, 0)))
+        .chain(once(&Mapping::takeover()))
         .flat_map(|t| {
-            let mut news = Vec::new();
-            let mut olds = Vec::new();
-            for range in &ranges {
-                if range.end <= t.range.start {
-                    // other range is entirely to the right of us
-                    olds.push(range.clone());
-                    continue;
-                }
-                if t.range.end <= range.start {
-                    // other range is entirely to the left of us
-                    olds.push(range.clone());
-                    continue;
-                }
-
-                if t.range.start < range.start && t.range.end < range.end {
-                    // other range starts left from us and stops inside our range
-                    olds.push(t.range.end..range.end);
-                    news.push(range.start + t.offset..t.range.end + t.offset);
-                    continue;
-                }
-                if range.start < t.range.start && range.end < t.range.end {
-                    // other range starts inside our and stops outside our range
-                    olds.push(range.start..t.range.start);
-                    news.push(t.range.start + t.offset..range.end + t.offset);
-                    continue;
-                }
-                if (range.end - range.start) < t.len() {
-                    // other range covers entirely our range
-                    news.push(range.start + t.offset..range.end + t.offset);
-                    continue;
-                }
-
-                // other range is entirely inside our range
-                olds.push(range.start..t.range.start);
-                olds.push(t.range.end..range.end);
-                news.push(t.range.start + t.offset..t.range.end + t.offset);
-            }
+            let (olds, news) = propagate_once(&ranges, t);
             ranges = olds;
             news
         })

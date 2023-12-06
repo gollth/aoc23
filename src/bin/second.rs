@@ -54,7 +54,9 @@ fn main() -> anyhow::Result<()> {
     };
     println!("Solution Part {:?}: {answer}", args.part);
 
-    animation::run(&input, args.frequency, args.part);
+    if args.animate {
+        animation::run(&input, args.frequency, args.part);
+    }
 
     Ok(())
 }
