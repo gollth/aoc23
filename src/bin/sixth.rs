@@ -67,9 +67,11 @@ impl Document {
 }
 impl Race {
     fn winning_charge(&self) -> impl Iterator<Item = Race> + '_ {
-        (1..self.time)
-            .map(|t| Race::new(t, (self.time - t).max(0) * t))
-            .filter(|r| r.distance > self.distance)
+        let p = self.time as f32 / 2.;
+        let q = (p.powi(2) - (self.distance + 1) as f32).sqrt();
+        let lower = (p - q).ceil() as u64;
+        let upper = (p + q).floor() as u64;
+        (lower..=upper).map(|t| Race::new(t, (self.time - t) * t))
     }
 }
 
