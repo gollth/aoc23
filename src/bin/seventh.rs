@@ -3,7 +3,9 @@ use aoc23::Part;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use itertools::Itertools;
-use std::{cmp::Ordering, collections::HashMap, fmt::Display, str::FromStr};
+use std::{
+    cmp::Ordering, collections::HashMap, fmt::Debug, fmt::Display, iter::once, str::FromStr,
+};
 
 /// Day 7: Camel Cards
 #[derive(Debug, Parser)]
@@ -14,21 +16,35 @@ struct Options {
 
     /// Which part of the day to solve
     part: Part,
+
+    /// Print rankings as table
+    #[clap(short, long)]
+    verbose: bool,
 }
 
 fn main() -> Result<()> {
     let args = Options::parse();
     let input = std::fs::read_to_string(&args.input)?;
-    let mut game = Game::from_str(&input)?;
-    let solution = match args.part {
-        Part::One => game
-            .ranking()
-            .map(|(_, bid)| bid)
-            .zip(1..)
-            .map(|(bid, rank)| bid * rank)
-            .sum::<u32>(),
-        Part::Two => unimplemented!(),
-    };
+
+    std::fs::write("/tmp/input.txt", input.replace('J', "*"))?;
+    let mut game = Game::from_str(&match args.part {
+        Part::One => input,
+        Part::Two => input.replace('J', "*"),
+    })?;
+    let solution = game
+        .ranking()
+        .zip(1..)
+        .inspect(|((hand, bid), rank)| {
+            if args.verbose {
+                println!(
+                    "#{rank: >4}: {:^10} {:>13} {bid: >4}$",
+                    hand.to_string(),
+                    format!("{:?}", hand.rank)
+                )
+            }
+        })
+        .map(|((_, bid), rank)| bid * rank)
+        .sum::<u32>();
     println!("Solution part {part:?}: {solution}", part = args.part);
     Ok(())
 }
@@ -40,6 +56,49 @@ enum Face {
     Queen,
     Jack,
     Number(u8),
+    Joker,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct Card {
+    face: Face,
+    value: Face,
+}
+impl Card {
+    fn joker(face: Face) -> Self {
+        Self {
+            face,
+            value: Face::Number(1), // Joker value is officially "Jack" but: J cards are now the weakest individual cards, weaker even than 2
+        }
+    }
+    fn is_joker(&self) -> bool {
+        self.face != self.value
+    }
+}
+impl From<Face> for Card {
+    fn from(face: Face) -> Self {
+        Self {
+            face,
+            value: match face {
+                Face::Joker => Face::Jack,
+                x => x,
+            },
+        }
+    }
+}
+impl Debug for Card {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.face)?;
+        if self.is_joker() {
+            write!(f, "*")?;
+        }
+        Ok(())
+    }
+}
+impl Display for Card {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
@@ -52,10 +111,10 @@ enum Rank {
     FourOfAKind,
     FiveOfAKind,
 }
-
+type Cards = [Card; 5];
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Hand {
-    cards: [Face; 5],
+    cards: Cards,
     rank: Rank,
 }
 
@@ -90,10 +149,10 @@ impl Game {
     }
 }
 
-impl From<[Face; 5]> for Rank {
-    fn from(cards: [Face; 5]) -> Self {
+impl From<Cards> for Rank {
+    fn from(cards: Cards) -> Self {
         let groups = cards.iter().fold(HashMap::new(), |mut cache, card| {
-            *cache.entry(card).or_insert(0) += 1;
+            *cache.entry(card.face).or_insert(0) += 1;
             cache
         });
         match groups.len() {
@@ -109,22 +168,40 @@ impl From<[Face; 5]> for Rank {
     }
 }
 
+const ALL: [Face; 13] = [
+    Face::Number(2),
+    Face::Number(3),
+    Face::Number(4),
+    Face::Number(5),
+    Face::Number(6),
+    Face::Number(7),
+    Face::Number(8),
+    Face::Number(9),
+    Face::Number(10),
+    Face::Jack,
+    Face::Queen,
+    Face::King,
+    Face::Ace,
+];
+
 impl FromStr for Hand {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() > 5 {
             return Err(anyhow!("Hands consists only of 5 cards"));
         }
-        let cards = s
+
+        let (cards, rank) = s
             .chars()
-            .map(Face::try_from)
-            .collect::<Result<Vec<Face>>>()?
-            .as_slice()
-            .try_into()?;
-        Ok(Self {
-            cards,
-            rank: cards.into(),
-        })
+            .flat_map(Face::try_from)
+            .map(|face| face.combinations().collect_vec())
+            .multi_cartesian_product()
+            .map(|faces| Cards::try_from(faces.as_slice()).unwrap())
+            .map(|cards| (cards, Rank::from(cards)))
+            .max_by_key(|(_, rank)| *rank)
+            .expect("At least one combination");
+
+        Ok(Self { cards, rank })
     }
 }
 
@@ -140,24 +217,32 @@ impl Display for Hand {
 
 impl PartialOrd for Hand {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match self.rank.partial_cmp(&other.rank)? {
-            Ordering::Equal => self
-                .cards
-                .iter()
-                .zip(other.cards.iter())
-                .find(|(a, b)| a.cmp(b) != Ordering::Equal)
-                .map(|(a, b)| a.partial_cmp(b))
-                .unwrap_or(Some(Ordering::Equal)),
-            o => Some(o),
-        }
+        Some(self.cmp(other))
     }
 }
 impl Ord for Hand {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        match self.rank.cmp(&other.rank) {
+            Ordering::Equal => self
+                .cards
+                .iter()
+                .zip(other.cards.iter())
+                .find(|(a, b)| a.value.cmp(&b.value) != Ordering::Equal)
+                .map(|(a, b)| a.value.cmp(&b.value))
+                .unwrap_or(Ordering::Equal),
+            o => o,
+        }
     }
 }
 
+impl Face {
+    fn combinations(&self) -> Box<dyn Iterator<Item = Card>> {
+        match self {
+            Self::Joker => Box::new(ALL.into_iter().map(Card::joker)),
+            x => Box::new(once(Card::from(*x))),
+        }
+    }
+}
 impl TryFrom<char> for Face {
     type Error = anyhow::Error;
     fn try_from(value: char) -> Result<Self, Self::Error> {
@@ -167,6 +252,7 @@ impl TryFrom<char> for Face {
             'Q' => Ok(Self::Queen),
             'J' => Ok(Self::Jack),
             'T' => Ok(Self::Number(10)),
+            '*' => Ok(Self::Joker),
             n => Ok(Self::Number(
                 n.to_digit(10).ok_or(anyhow!("Expected digit found {n}"))? as u8,
             )),
@@ -182,18 +268,14 @@ impl Display for Face {
             Face::Number(10) => write!(f, "T"),
             Face::Number(n) => write!(f, "{}", n),
             Face::Ace => write!(f, "A"),
+            Face::Joker => write!(f, "*"),
         }
     }
 }
+
 impl Ord for Face {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-impl PartialOrd for Face {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(match (*self, *other) {
+        match (*self, *other) {
             (Self::Ace, Self::Ace) => Ordering::Equal,
             (Self::Ace, _) => Ordering::Greater,
             (Self::King, Self::Ace) => Ordering::Less,
@@ -210,7 +292,14 @@ impl PartialOrd for Face {
             (Self::Jack, _) => Ordering::Greater,
             (Self::Number(a), Self::Number(b)) => a.cmp(&b),
             (Self::Number(_), _) => Ordering::Less,
-        })
+            (Self::Joker, x) => panic!("Shouldn't compare joker with {x}"),
+        }
+    }
+}
+
+impl PartialOrd for Face {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -347,7 +436,24 @@ mod tests {
     #[case("QQ7QQ", Rank::FourOfAKind)]
     #[case("AAAAA", Rank::FiveOfAKind)]
     #[case("33333", Rank::FiveOfAKind)]
+    #[case("AA222", Rank::FullHouse)]
+    #[case("AAA22", Rank::FullHouse)]
     fn hand_rank(#[case] hand: Hand, #[case] rank: Rank) {
+        assert_eq!(rank, hand.rank);
+    }
+
+    #[rstest]
+    #[case("3333*", Rank::FiveOfAKind)]
+    #[case("*3333", Rank::FiveOfAKind)]
+    #[case("*TT*T", Rank::FiveOfAKind)]
+    #[case("*2345", Rank::OnePair)]
+    #[case("22*45", Rank::ThreeOfAKind)]
+    #[case("**345", Rank::ThreeOfAKind)]
+    #[case("252*2", Rank::FourOfAKind)]
+    #[case("25**2", Rank::FourOfAKind)]
+    #[case("***QK", Rank::FourOfAKind)]
+    #[case("*****", Rank::FiveOfAKind)]
+    fn hand_rank_joker(#[case] hand: Hand, #[case] rank: Rank) {
         assert_eq!(rank, hand.rank);
     }
 
@@ -362,9 +468,15 @@ mod tests {
     #[case("55T22", Ordering::Less, "55A11")]
     #[case("55T22", Ordering::Greater, "5511A")]
     fn hand_ord(#[case] a: Hand, #[case] expected: Ordering, #[case] b: Hand) {
-        assert_eq!(expected, a.cmp(&b), "{a:?} {expected:?} {b:?}");
+        assert_eq!(expected, a.cmp(&b), "{a} {expected:?} {b}");
     }
 
+    #[rstest]
+    #[case("*KKK2", Ordering::Less, "QQQQ2")]
+    #[case("*TQKA", Ordering::Less, "2TQAA")]
+    fn hand_ord_joker(#[case] a: Hand, #[case] expected: Ordering, #[case] b: Hand) {
+        assert_eq!(expected, a.cmp(&b), "{a} {expected:?} {b}");
+    }
     #[rstest]
     fn sample_a_manual() {
         let input = include_str!("../../sample/seventh.txt");
@@ -396,5 +508,41 @@ mod tests {
             .map(|(bid, rank)| bid * rank)
             .sum::<u32>();
         assert_eq!(6440, solution);
+    }
+
+    #[rstest]
+    fn sample_b() {
+        let input = include_str!("../../sample/seventh.txt");
+        let input = input.replace('J', "*");
+        let mut game = Game::from_str(&input).expect("parsing");
+
+        let solution = game
+            .ranking()
+            .map(|(_, bid)| bid)
+            .zip(1..)
+            .map(|(bid, rank)| bid * rank)
+            .sum::<u32>();
+        assert_eq!(5905, solution);
+    }
+
+    #[rstest]
+    fn sample_b_manual() {
+        let input = include_str!("../../sample/seventh.txt");
+        let input = input.replace('J', "*");
+        let mut game = Game::from_str(&input).expect("parsing");
+        for (rank, (hand, bid), (expected_hand, expected_bid)) in izip!(
+            1..,
+            game.ranking(),
+            &[
+                ("32T3K", 765),
+                ("KK677", 28),
+                ("T555*5", 684),
+                ("QQQQ*A", 483),
+                ("KTT*T*T", 220),
+            ]
+        ) {
+            assert_eq!(expected_hand, &hand.to_string(), "Rank #{rank}");
+            assert_eq!(expected_bid, bid, "Rank #{rank}");
+        }
     }
 }
