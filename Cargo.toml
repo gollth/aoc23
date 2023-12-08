@@ -22,4 +22,5 @@ opt-level = 1
 opt-level = 3
 
 [dev-dependencies]
+indoc = "2.0.4"
 rstest = "0.18.2"

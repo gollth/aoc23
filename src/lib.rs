@@ -1,6 +1,7 @@
 pub mod fifth;
 pub mod second;
 
+use anyhow::anyhow;
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
@@ -12,6 +13,10 @@ use std::convert::AsRef;
 pub enum Part {
     One,
     Two,
+}
+
+pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
+    anyhow!("{e}")
 }
 
 #[derive(Resource)]
