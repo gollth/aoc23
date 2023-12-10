@@ -22,17 +22,14 @@ fn main() -> anyhow::Result<()> {
     let args = Options::parse();
     let input = std::fs::read_to_string(&args.input)?;
 
-    let solution = match args.part {
-        Part::One => predict::<i64>(&input)
-            .map(|history| history.sum::<i64>())
-            .sum::<i64>(),
-        Part::Two => unimplemented!(),
-    };
+    let solution = predict::<i64>(&input, args.part)
+        .map(|history| history.sum::<i64>())
+        .sum::<i64>();
     println!("Solution part {:?}: {solution:?}", args.part);
     Ok(())
 }
 
-fn predict<'a, T>(input: &'a str) -> impl Iterator<Item = PredictIter<'a, T>>
+fn predict<'a, T>(input: &'a str, part: Part) -> impl Iterator<Item = PredictIter<'a, T>>
 where
     T: Copy + Sub<Output = T> + Zero + 'a + FromStr,
 {
@@ -42,7 +39,10 @@ where
             line.split_whitespace()
                 .filter_map(|item| item.parse::<T>().ok())
         })
-        .map(|values| PredictIter::new(values.rev()))
+        .map(move |values| match part {
+            Part::One => PredictIter::new(values.rev()),
+            Part::Two => PredictIter::new(values),
+        })
 }
 
 #[derive(Clone)]
@@ -117,7 +117,7 @@ mod tests {
     #[case(2, vec![45, 15, 6, 2, 0, 0])]
     fn sample_a_manual(#[case] line: usize, #[case] expectation: Vec<i32>) {
         let input = include_str!("../../sample/ninth.txt");
-        let oasis = predict(input)
+        let oasis = predict(input, Part::One)
             .nth(line)
             .expect("input to contain line number {line}");
         assert_eq!(expectation, oasis.collect::<Vec<i32>>());
@@ -126,9 +126,21 @@ mod tests {
     #[rstest]
     fn sample_a() {
         let input = include_str!("../../sample/ninth.txt");
-        let oasis = predict::<i32>(input)
+        let oasis = predict::<i32>(input, Part::One)
             .map(|history| history.sum::<i32>())
             .sum::<i32>();
         assert_eq!(114, oasis);
+    }
+
+    #[rstest]
+    #[case(0, vec![ 0, -3, 0, 0, 0, 0])]
+    #[case(1, vec![ 1, -2, 1, 0, 0, 0])]
+    #[case(2, vec![10, -3, 0, -2, 0, 0])]
+    fn sample_b_manual(#[case] line: usize, #[case] expectation: Vec<i32>) {
+        let input = include_str!("../../sample/ninth.txt");
+        let oasis = predict(input, Part::Two)
+            .nth(line)
+            .expect("input to contain line number {line}");
+        assert_eq!(expectation, oasis.collect::<Vec<i32>>())
     }
 }
