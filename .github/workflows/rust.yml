@@ -10,11 +10,11 @@ jobs:
       - name: Checkout Sources
         uses: actions/checkout@v2
 
-      - name: Install Stable Toolchain
+      - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly-2023-05-25
           override: true
 
       - name: Install System Dependencies
@@ -32,11 +32,11 @@ jobs:
       - name: Checkout Sources
         uses: actions/checkout@v2
 
-      - name: Install Stable Toolchain
+      - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly-2023-05-25
           override: true
 
       - name: Install System Dependencies
@@ -54,11 +54,11 @@ jobs:
       - name: Checkout Sources
         uses: actions/checkout@v2
 
-      - name: Install Stable Toolchain
+      - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly-2023-05-25
           override: true
           components: rustfmt, clippy
 
