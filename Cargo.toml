@@ -14,6 +14,7 @@ lazy_static = "1.4.0"
 nom = "7.0.0"
 nom-supreme = "0.8.0"
 num = "0.4.1"
+termion = "2.0.3"
 
 [profile.dev]
 opt-level = 1
