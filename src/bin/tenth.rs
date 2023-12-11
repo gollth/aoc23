@@ -1,4 +1,7 @@
-use aoc23::{ten::Maze, Part};
+use aoc23::{
+    ten::{animation, Maze},
+    Part,
+};
 
 use clap::Parser;
 use std::{fmt::Debug, str::FromStr};
@@ -20,6 +23,14 @@ struct Options {
     /// Invert the "inside" of the search
     #[clap(long)]
     invert: bool,
+
+    /// Should the solution be animated?
+    #[clap(short, long)]
+    animate: bool,
+
+    /// How often to execute each step (Hz)
+    #[clap(short, long, default_value_t = 5.)]
+    frequency: f32,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -41,7 +52,12 @@ fn main() -> anyhow::Result<()> {
     if args.verbose {
         println!("{maze:?}");
     }
+
     println!("Solution part {:?}: {solution}", args.part);
+
+    if args.animate {
+        animation::run(maze, args.frequency);
+    }
     Ok(())
 }
 

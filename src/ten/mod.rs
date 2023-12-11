@@ -1,3 +1,5 @@
+pub mod animation;
+
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
@@ -7,11 +9,12 @@ use std::{
 };
 
 use anyhow::anyhow;
+use bevy::prelude::{Component, Resource};
 use enum_iterator::{all, next_cycle, previous_cycle, Sequence};
 use itertools::Itertools;
 use termion::color::{Fg, LightYellow, Red, Reset, Rgb};
 
-#[derive(Debug, Default, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, Hash, Component)]
 pub struct Coord {
     x: i32,
     y: i32,
@@ -26,7 +29,7 @@ enum Direction {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum Pipe {
+pub(crate) enum Pipe {
     NS,
     EW,
     NW,
@@ -36,6 +39,7 @@ enum Pipe {
     Start,
 }
 
+#[derive(Resource)]
 pub struct Maze {
     pipes: HashMap<Coord, Pipe>,
     start: Coord,
@@ -50,6 +54,20 @@ impl Direction {
     }
     fn ccw(&self) -> Self {
         previous_cycle(self).unwrap()
+    }
+}
+
+impl From<Pipe> for usize {
+    fn from(pipe: Pipe) -> Self {
+        match pipe {
+            Pipe::SW => 0,
+            Pipe::SE => 1,
+            Pipe::NW => 2,
+            Pipe::NE => 3,
+            Pipe::EW => 4,
+            Pipe::NS => 5,
+            Pipe::Start => 6,
+        }
     }
 }
 

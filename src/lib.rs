@@ -23,7 +23,10 @@ pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
 }
 
 #[derive(Resource)]
-pub struct Tick(Timer);
+pub struct Tick {
+    timer: Timer,
+    f: f32,
+}
 
 #[derive(Default, Resource)]
 pub struct Running(bool);
@@ -35,18 +38,29 @@ impl Running {
 }
 
 impl Tick {
-    pub fn new(frequency: f32) -> Self {
-        Self(Timer::from_seconds(1. / frequency, TimerMode::Repeating))
+    pub fn new(f: f32) -> Self {
+        Self {
+            timer: Timer::from_seconds(1. / f, TimerMode::Repeating),
+            f,
+        }
     }
 
     pub fn inner(&mut self) -> &mut Timer {
-        &mut self.0
+        &mut self.timer
+    }
+
+    pub fn frequency(&self) -> f32 {
+        self.f
+    }
+    pub fn set_frequency(&mut self, f: f32) {
+        self.timer = Timer::from_seconds(1. / f, TimerMode::Repeating);
+        self.f = f;
     }
 }
 
 impl AsRef<Timer> for Tick {
     fn as_ref(&self) -> &Timer {
-        &self.0
+        &self.timer
     }
 }
 
