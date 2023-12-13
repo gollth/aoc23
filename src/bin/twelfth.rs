@@ -1,3 +1,5 @@
+#![feature(generators, iter_from_generator)]
+
 use aoc23::{anyhowing, Part};
 
 use anyhow::Result;
@@ -46,12 +48,45 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[derive(Debug, Default)]
-struct Springs(Vec<Report>);
-
-#[derive(Debug, Default)]
 struct Report {
     pattern: Pattern,
     groups: Vec<u32>,
+}
+impl Report {
+    fn new(mut pattern: Pattern, groups: Vec<u32>) -> Self {
+        pattern.0.insert(0, Condition::O);
+        pattern.0.push(Condition::O);
+        Self { pattern, groups }
+    }
+    fn combinations(&self) -> impl Iterator<Item = Combination> + '_ {
+        let n = self.pattern.0.len();
+        let m = self.groups.len() + 1;
+        let k = n - self.groups.iter().sum::<u32>() as usize;
+        (0..m)
+            .map(|_| 1..k)
+            .multi_cartesian_product()
+            .filter(move |combi| k == combi.iter().sum::<usize>())
+            .map(|combi| {
+                combi
+                    .into_iter()
+                    .map(|i| (Condition::O, i))
+                    .interleave(self.groups.iter().map(|x| (Condition::I, *x as usize)))
+                    .flat_map(|(x, n)| repeat_n(x, n))
+                    .collect::<Combination>()
+            })
+            .filter(|combi| {
+                combi
+                    .iter()
+                    .zip(self.pattern.0.iter())
+                    .all(|(a, b)| a.matches(&b))
+            })
+    }
+}
+impl FromStr for Report {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(report(s).finish().map_err(anyhowing)?.1)
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
@@ -60,7 +95,6 @@ enum Condition {
     O,
     X,
 }
-
 impl Condition {
     fn matches(&self, other: &Self) -> bool {
         match (self, other) {
@@ -70,9 +104,67 @@ impl Condition {
         }
     }
 }
+impl Debug for Combination {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for bit in 0..self.len {
+            write!(
+                f,
+                "{}",
+                if self.pattern & (1 << bit) > 0 {
+                    Condition::I
+                } else {
+                    Condition::X
+                }
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl FromIterator<Condition> for Combination {
+    fn from_iter<T: IntoIterator<Item = Condition>>(iter: T) -> Self {
+        let mut len = 0;
+        let mut pattern = 0u32;
+        let mut iter = iter.into_iter();
+        while let Some(bit) = iter.next() {
+            if bit == Condition::I {
+                pattern |= 1 << len;
+            }
+            len += 1;
+        }
+        Self { pattern, len }
+    }
+}
+
+impl Combination {
+    fn iter(&self) -> impl Iterator<Item = Condition> + '_ {
+        std::iter::from_generator(|| {
+            for bit in 0..self.len {
+                yield (self.pattern & (1 << bit) > 0).into()
+            }
+        })
+    }
+}
+
+impl PartialEq<Pattern> for Combination {
+    fn eq(&self, other: &Pattern) -> bool {
+        self.iter().zip(other.0.iter()).all(|(a, b)| a.matches(b))
+    }
+}
 
 #[derive(Default, PartialEq, Eq, Clone, Hash)]
 struct Pattern(Vec<Condition>);
+impl Debug for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0.iter().map(|p| p.to_string()).join(""),)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Hash)]
+struct Combination {
+    pattern: u32,
+    len: usize,
+}
 
 impl Display for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -83,9 +175,24 @@ impl Display for Condition {
         }
     }
 }
-impl Debug for Pattern {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.iter().map(|p| p.to_string()).join(""),)
+impl From<bool> for Condition {
+    fn from(value: bool) -> Self {
+        if value {
+            Self::I
+        } else {
+            Self::O
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Springs(Vec<Report>);
+impl Springs {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn reports(&self) -> impl Iterator<Item = &Report> {
+        self.0.iter()
     }
 }
 impl FromStr for Springs {
@@ -96,13 +203,6 @@ impl FromStr for Springs {
                 .map(|line| Report::from_str(line))
                 .collect::<Result<Vec<_>>>()?,
         ))
-    }
-}
-
-impl FromStr for Report {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(report(s).finish().map_err(anyhowing)?.1)
     }
 }
 
@@ -118,53 +218,20 @@ fn condition(s: &str) -> IResult<&str, Condition> {
 fn pattern(s: &str) -> IResult<&str, Pattern> {
     many1(condition).map(Pattern).parse(s)
 }
+fn combination(s: &str) -> IResult<&str, Combination> {
+    many1(alt((
+        char('.').value(Condition::O),
+        char('#').value(Condition::I),
+    )))
+    .map(|cs| cs.into_iter().collect())
+    .parse(s)
+}
 fn report(s: &str) -> IResult<&str, Report> {
     pattern
         .terminated(space1)
         .and(separated_list1(char(','), u32))
         .map(|(pattern, groups)| Report::new(pattern, groups))
         .parse(s)
-}
-
-impl Report {
-    fn new(mut pattern: Pattern, groups: Vec<u32>) -> Self {
-        pattern.0.insert(0, Condition::O);
-        pattern.0.push(Condition::O);
-        Self { pattern, groups }
-    }
-    fn combinations(&self) -> impl Iterator<Item = Pattern> + '_ {
-        let n = self.pattern.0.len();
-        let m = self.groups.len() + 1;
-        let k = n - self.groups.iter().sum::<u32>() as usize;
-        (0..m)
-            .map(|_| 1..k)
-            .multi_cartesian_product()
-            .filter(move |combi| k == combi.iter().sum::<usize>())
-            .map(|combi| {
-                combi
-                    .into_iter()
-                    .map(|i| (Condition::O, i))
-                    .interleave(self.groups.iter().map(|x| (Condition::I, *x as usize)))
-                    .flat_map(|(x, n)| repeat_n(x, n))
-                    .collect::<Vec<_>>()
-            })
-            .filter(|combi| {
-                combi
-                    .iter()
-                    .zip(self.pattern.0.iter())
-                    .all(|(a, b)| a.matches(&b))
-            })
-            .map(Pattern)
-    }
-}
-
-impl Springs {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-    fn reports(&self) -> impl Iterator<Item = &Report> {
-        self.0.iter()
-    }
 }
 
 #[cfg(test)]
@@ -218,7 +285,7 @@ mod tests {
 
         for expected in expected_combinations
             .into_iter()
-            .map(|x| pattern(&format!(".{x}.")).unwrap().1)
+            .map(|x| combination(&format!(".{x}.")).unwrap().1)
         {
             assert!(
                 combinations.contains(&expected),
