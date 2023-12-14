@@ -13,8 +13,9 @@ use nom::{
 };
 use nom_supreme::ParserExt;
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     fmt::{Debug, Display},
+    iter::repeat,
     str::FromStr,
 };
 
@@ -33,32 +34,52 @@ fn main() -> anyhow::Result<()> {
     let args = Options::parse();
     let input = std::fs::read_to_string(&args.input)?;
 
-    let springs = Springs::from_str(&input)?;
-    let solution = match args.part {
-        Part::One => springs
-            .reports()
-            .map(|report| report.arrangements())
-            .sum::<usize>(),
-        Part::Two => unimplemented!(),
+    let input = match args.part {
+        Part::One => input,
+        Part::Two => input
+            .lines()
+            .flat_map(|line| line.split_whitespace().collect_tuple())
+            .map(|(pattern, clues)| {
+                format!(
+                    "{} {}",
+                    repeat(pattern).take(5).join("?"),
+                    repeat(clues).take(5).join(","),
+                )
+            })
+            .join("\n"),
     };
+
+    let springs = Springs::from_str(&input)?;
+    let solution = springs
+        .reports()
+        .map(|report| report.arrangements())
+        .sum::<usize>();
 
     println!("Solution part {part:?}: {solution}", part = args.part);
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 enum Clue {
     Unknown(u32),
     Checking(u32),
 }
 
-fn recurse<'a>(
+type Memo = HashMap<(Option<Bit>, Option<Clue>, VecDeque<Bit>, VecDeque<Clue>), usize>;
+
+fn recurse(
+    memo: &mut Memo,
     bit: Option<Bit>,
     clue: Option<Clue>,
     mut bits: VecDeque<Bit>,
     mut clues: VecDeque<Clue>,
 ) -> usize {
-    match (bit, clue) {
+    let key = (bit, clue, bits.clone(), clues.clone());
+    if let Some(cache) = memo.get(&key) {
+        return *cache;
+    }
+
+    let result = match (bit, clue) {
         // all clues and all bits consumed, this is a valid solution
         (None, None) => 1,
 
@@ -69,19 +90,21 @@ fn recurse<'a>(
         (Some(Bit::I), None) => 0,
 
         // found a padding zero bit, remove it and recurse
-        (Some(Bit::O), None) => recurse(bits.pop_front(), clue, bits, clues),
+        (Some(Bit::O), None) => recurse(memo, bits.pop_front(), clue, bits, clues),
 
         // No active clue right now, but a O doesnt start one yet, just recurse
-        (Some(Bit::O), Some(Clue::Unknown(_))) => recurse(bits.pop_front(), clue, bits, clues),
+        (Some(Bit::O), Some(Clue::Unknown(_))) => {
+            recurse(memo, bits.pop_front(), clue, bits, clues)
+        }
 
         // No active clue right now, but this I starts the next, recurse with next clue
         (Some(Bit::I), Some(Clue::Unknown(l))) => {
-            recurse(bit, Some(Clue::Checking(l)), bits, clues)
+            recurse(memo, bit, Some(Clue::Checking(l)), bits, clues)
         }
 
         // end of a clue
         (Some(Bit::O), Some(Clue::Checking(0))) => {
-            recurse(bits.pop_front(), clues.pop_front(), bits, clues)
+            recurse(memo, bits.pop_front(), clues.pop_front(), bits, clues)
         }
 
         // Found O while expected a block of at least n Is, thus invalid solution
@@ -89,18 +112,25 @@ fn recurse<'a>(
 
         // expand the X with both I + O and recurse
         (Some(Bit::X), _) => {
-            recurse(Some(Bit::I), clue, bits.clone(), clues.clone())
-                + recurse(Some(Bit::O), clue, bits, clues)
+            recurse(memo, Some(Bit::I), clue, bits.clone(), clues.clone())
+                + recurse(memo, Some(Bit::O), clue, bits, clues)
         }
 
         // clue does not indicate more Is to come, but we found another, thus invalid solution
         (Some(Bit::I), Some(Clue::Checking(0))) => 0,
 
         // checking a block of Is against a clue, recurse
-        (Some(Bit::I), Some(Clue::Checking(l))) => {
-            recurse(bits.pop_front(), Some(Clue::Checking(l - 1)), bits, clues)
-        }
-    }
+        (Some(Bit::I), Some(Clue::Checking(l))) => recurse(
+            memo,
+            bits.pop_front(),
+            Some(Clue::Checking(l - 1)),
+            bits,
+            clues,
+        ),
+    };
+
+    memo.insert(key, result);
+    result
 }
 
 #[derive(Debug, Default)]
@@ -122,7 +152,8 @@ impl Report {
             .map(|n| Clue::Unknown(*n))
             .collect::<VecDeque<_>>();
 
-        recurse(bits.pop_front(), clues.pop_front(), bits, clues)
+        let mut memo = HashMap::new();
+        recurse(&mut memo, bits.pop_front(), clues.pop_front(), bits, clues)
     }
 }
 impl FromStr for Report {
@@ -169,7 +200,7 @@ impl FromStr for Springs {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Springs(
             s.lines()
-                .map(|line| Report::from_str(line))
+                .map(Report::from_str)
                 .collect::<Result<Vec<_>>>()?,
         ))
     }
