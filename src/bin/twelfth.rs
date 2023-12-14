@@ -4,8 +4,7 @@ use aoc23::{anyhowing, Part};
 
 use anyhow::Result;
 use clap::Parser;
-use indicatif::ProgressIterator;
-use itertools::{repeat_n, Itertools};
+use itertools::Itertools;
 use nom::{
     branch::alt,
     character::complete::{char, space1, u32},
@@ -14,6 +13,7 @@ use nom::{
 };
 use nom_supreme::ParserExt;
 use std::{
+    collections::VecDeque,
     fmt::{Debug, Display},
     str::FromStr,
 };
@@ -37,8 +37,7 @@ fn main() -> anyhow::Result<()> {
     let solution = match args.part {
         Part::One => springs
             .reports()
-            .map(|report| report.combinations().count())
-            .progress_count(springs.len() as u64)
+            .map(|report| report.arrangements())
             .sum::<usize>(),
         Part::Two => unimplemented!(),
     };
@@ -47,39 +46,83 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Clue {
+    Unknown(u32),
+    Checking(u32),
+}
+
+fn recurse<'a>(
+    bit: Option<Bit>,
+    clue: Option<Clue>,
+    mut bits: VecDeque<Bit>,
+    mut clues: VecDeque<Clue>,
+) -> usize {
+    match (bit, clue) {
+        // all clues and all bits consumed, this is a valid solution
+        (None, None) => 1,
+
+        // not all clues yet consumed, this is not a valid solution
+        (None, Some(_)) => 0,
+
+        // no clue left but another I found, this is not a valid solution
+        (Some(Bit::I), None) => 0,
+
+        // found a padding zero bit, remove it and recurse
+        (Some(Bit::O), None) => recurse(bits.pop_front(), clue, bits, clues),
+
+        // No active clue right now, but a O doesnt start one yet, just recurse
+        (Some(Bit::O), Some(Clue::Unknown(_))) => recurse(bits.pop_front(), clue, bits, clues),
+
+        // No active clue right now, but this I starts the next, recurse with next clue
+        (Some(Bit::I), Some(Clue::Unknown(l))) => {
+            recurse(bit, Some(Clue::Checking(l)), bits, clues)
+        }
+
+        // end of a clue
+        (Some(Bit::O), Some(Clue::Checking(0))) => {
+            recurse(bits.pop_front(), clues.pop_front(), bits, clues)
+        }
+
+        // Found O while expected a block of at least n Is, thus invalid solution
+        (Some(Bit::O), Some(Clue::Checking(_n))) => 0,
+
+        // expand the X with both I + O and recurse
+        (Some(Bit::X), _) => {
+            recurse(Some(Bit::I), clue, bits.clone(), clues.clone())
+                + recurse(Some(Bit::O), clue, bits, clues)
+        }
+
+        // clue does not indicate more Is to come, but we found another, thus invalid solution
+        (Some(Bit::I), Some(Clue::Checking(0))) => 0,
+
+        // checking a block of Is against a clue, recurse
+        (Some(Bit::I), Some(Clue::Checking(l))) => {
+            recurse(bits.pop_front(), Some(Clue::Checking(l - 1)), bits, clues)
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct Report {
     pattern: Pattern,
-    groups: Vec<u32>,
+    clues: Vec<u32>,
 }
 impl Report {
-    fn new(mut pattern: Pattern, groups: Vec<u32>) -> Self {
-        pattern.0.insert(0, Condition::O);
-        pattern.0.push(Condition::O);
-        Self { pattern, groups }
+    fn new(mut pattern: Pattern, clues: Vec<u32>) -> Self {
+        pattern.0.push(Bit::O);
+        Self { pattern, clues }
     }
-    fn combinations(&self) -> impl Iterator<Item = Combination> + '_ {
-        let n = self.pattern.0.len();
-        let m = self.groups.len() + 1;
-        let k = n - self.groups.iter().sum::<u32>() as usize;
-        (0..m)
-            .map(|_| 1..k)
-            .multi_cartesian_product()
-            .filter(move |combi| k == combi.iter().sum::<usize>())
-            .map(|combi| {
-                combi
-                    .into_iter()
-                    .map(|i| (Condition::O, i))
-                    .interleave(self.groups.iter().map(|x| (Condition::I, *x as usize)))
-                    .flat_map(|(x, n)| repeat_n(x, n))
-                    .collect::<Combination>()
-            })
-            .filter(|combi| {
-                combi
-                    .iter()
-                    .zip(self.pattern.0.iter())
-                    .all(|(a, b)| a.matches(&b))
-            })
+
+    fn arrangements(&self) -> usize {
+        let mut bits = self.pattern.0.iter().copied().collect::<VecDeque<_>>();
+        let mut clues = self
+            .clues
+            .iter()
+            .map(|n| Clue::Unknown(*n))
+            .collect::<VecDeque<_>>();
+
+        recurse(bits.pop_front(), clues.pop_front(), bits, clues)
     }
 }
 impl FromStr for Report {
@@ -90,97 +133,26 @@ impl FromStr for Report {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-enum Condition {
+enum Bit {
     I,
     O,
     X,
 }
-impl Condition {
-    fn matches(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::X, _) => true,
-            (_, Self::X) => true,
-            (a, b) => a == b,
-        }
-    }
-}
-impl Debug for Combination {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for bit in 0..self.len {
-            write!(
-                f,
-                "{}",
-                if self.pattern & (1 << bit) > 0 {
-                    Condition::I
-                } else {
-                    Condition::X
-                }
-            )?;
-        }
-        Ok(())
-    }
-}
-
-impl FromIterator<Condition> for Combination {
-    fn from_iter<T: IntoIterator<Item = Condition>>(iter: T) -> Self {
-        let mut len = 0;
-        let mut pattern = 0u32;
-        let mut iter = iter.into_iter();
-        while let Some(bit) = iter.next() {
-            if bit == Condition::I {
-                pattern |= 1 << len;
-            }
-            len += 1;
-        }
-        Self { pattern, len }
-    }
-}
-
-impl Combination {
-    fn iter(&self) -> impl Iterator<Item = Condition> + '_ {
-        std::iter::from_generator(|| {
-            for bit in 0..self.len {
-                yield (self.pattern & (1 << bit) > 0).into()
-            }
-        })
-    }
-}
-
-impl PartialEq<Pattern> for Combination {
-    fn eq(&self, other: &Pattern) -> bool {
-        self.iter().zip(other.0.iter()).all(|(a, b)| a.matches(b))
-    }
-}
 
 #[derive(Default, PartialEq, Eq, Clone, Hash)]
-struct Pattern(Vec<Condition>);
+struct Pattern(Vec<Bit>);
 impl Debug for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.iter().map(|p| p.to_string()).join(""),)
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Hash)]
-struct Combination {
-    pattern: u32,
-    len: usize,
-}
-
-impl Display for Condition {
+impl Display for Bit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Condition::I => write!(f, "█"),
-            Condition::O => write!(f, "·"),
-            Condition::X => write!(f, "░"),
-        }
-    }
-}
-impl From<bool> for Condition {
-    fn from(value: bool) -> Self {
-        if value {
-            Self::I
-        } else {
-            Self::O
+            Bit::I => write!(f, "█"),
+            Bit::O => write!(f, "·"),
+            Bit::X => write!(f, "░"),
         }
     }
 }
@@ -188,9 +160,6 @@ impl From<bool> for Condition {
 #[derive(Debug, Default)]
 struct Springs(Vec<Report>);
 impl Springs {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
     fn reports(&self) -> impl Iterator<Item = &Report> {
         self.0.iter()
     }
@@ -206,25 +175,17 @@ impl FromStr for Springs {
     }
 }
 
-fn condition(s: &str) -> IResult<&str, Condition> {
+fn condition(s: &str) -> IResult<&str, Bit> {
     alt((
-        char('.').value(Condition::O),
-        char('#').value(Condition::I),
-        char('?').value(Condition::X),
+        char('.').value(Bit::O),
+        char('#').value(Bit::I),
+        char('?').value(Bit::X),
     ))
     .parse(s)
 }
 
 fn pattern(s: &str) -> IResult<&str, Pattern> {
     many1(condition).map(Pattern).parse(s)
-}
-fn combination(s: &str) -> IResult<&str, Combination> {
-    many1(alt((
-        char('.').value(Condition::O),
-        char('#').value(Condition::I),
-    )))
-    .map(|cs| cs.into_iter().collect())
-    .parse(s)
 }
 fn report(s: &str) -> IResult<&str, Report> {
     pattern
@@ -236,63 +197,28 @@ fn report(s: &str) -> IResult<&str, Report> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use super::*;
 
     use rstest::rstest;
 
     #[rstest]
-    #[case("#.#..### 1,1,3", vec![
-           "#.#..###"
-    ])]
-    #[case("???.### 1,1,3", vec![
-           "#.#.###"
-    ])]
-    #[case(".??..??...?##. 1,1,3", vec![
-           ".#...#....###.",
-           "..#..#....###.",
-           ".#....#...###.",
-           "..#...#...###.",
-    ])]
-    #[case("?#?#?#?#?#?#?#? 1,3,1,6", vec![
-           ".#.###.#.######"
-    ])]
-    #[case("????.#...#... 4,1,1", vec![
-           "####.#...#..."
-    ])]
-    #[case("????.######..#####. 1,6,5", vec![
-           "#....######..#####.",
-           ".#...######..#####.",
-           "..#..######..#####.",
-           "...#.######..#####.",
-    ])]
-    #[case("?###???????? 3,2,1", vec![
-           ".###.##.#...",
-           ".###.##..#..",
-           ".###.##...#.",
-           ".###.##....#",
-           ".###..##.#..",
-           ".###..##..#.",
-           ".###..##...#",
-           ".###...##.#.",
-           ".###...##..#",
-           ".###....##.#",
-    ])]
-    fn sample_a_manual(#[case] report: Report, #[case] expected_combinations: Vec<&str>) {
-        let combinations = report.combinations().collect::<HashSet<_>>();
-        assert_eq!(expected_combinations.len(), combinations.len());
-
-        for expected in expected_combinations
-            .into_iter()
-            .map(|x| combination(&format!(".{x}.")).unwrap().1)
-        {
-            assert!(
-                combinations.contains(&expected),
-                "\nPattern  {:?}\nExpected {expected:?}",
-                report.pattern
-            );
-        }
+    #[case("# 1", 1)]
+    #[case("## 1", 0)] // invalid
+    #[case(".# 1", 1)]
+    #[case(".....# 1", 1)]
+    #[case("? 1", 1)]
+    #[case("?? 1", 2)]
+    #[case("??? 1,1", 1)]
+    #[case("#.#..### 1,1,3", 1)]
+    #[case("???.### 1,1,3", 1)]
+    #[case(".??..??...?##. 1,1,3", 4)]
+    #[case("?#?#?#?#?#?#?#? 1,3,1,6", 1)]
+    #[case("????.#...#... 4,1,1", 1)]
+    #[case("????.######..#####. 1,6,5", 4)]
+    #[case("#???? 1,2", 2)]
+    #[case("?###???????? 3,2,1", 10)]
+    fn sample_a_manual(#[case] report: Report, #[case] expected_combinations: usize) {
+        assert_eq!(expected_combinations, report.arrangements());
     }
 
     #[rstest]
@@ -301,7 +227,7 @@ mod tests {
         let springs = Springs::from_str(input).expect("parsing");
         let arrangements = springs
             .reports()
-            .map(|report| report.combinations().count())
+            .map(|report| report.arrangements())
             .sum::<usize>();
         assert_eq!(21, arrangements);
     }
