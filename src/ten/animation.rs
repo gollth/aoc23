@@ -1,4 +1,4 @@
-use crate::{mouse, toggle_running, Running, Scroll, Tick};
+use crate::{frequency_increaser, mouse, toggle_running, Running, Scroll, Tick};
 
 use super::{Coord, Maze, Pipe};
 
@@ -166,16 +166,6 @@ fn update(
     }
 
     state.progress += 1;
-}
-
-pub fn frequency_increaser(keys: Res<Input<KeyCode>>, mut timer: ResMut<Tick>) {
-    let f = timer.frequency();
-    if keys.just_released(KeyCode::J) {
-        timer.set_frequency(f * 2.);
-    }
-    if keys.just_released(KeyCode::K) {
-        timer.set_frequency(f / 2.);
-    }
 }
 
 fn pipe_colorer(

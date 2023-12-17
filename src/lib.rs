@@ -1,8 +1,9 @@
-#![feature(generators, iter_from_generator)]
+#![feature(generators, iter_from_generator, iter_intersperse)]
 
 pub mod fifth;
 pub mod second;
 pub mod ten;
+pub mod thirteenth;
 
 use anyhow::anyhow;
 use bevy::{
@@ -22,13 +23,25 @@ pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
     anyhow!("{e}")
 }
 
+pub(crate) fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+pub(crate) fn lerpc(a: Color, b: Color, t: f32) -> Color {
+    Color::rgba(
+        lerp(a.r(), b.r(), t),
+        lerp(a.g(), b.g(), t),
+        lerp(a.b(), b.b(), t),
+        lerp(a.a(), b.a(), t),
+    )
+}
+
 #[derive(Resource)]
 pub struct Tick {
     timer: Timer,
     f: f32,
 }
 
-#[derive(Default, Resource)]
+#[derive(Default, Resource, Debug)]
 pub struct Running(bool);
 
 impl Running {
@@ -61,6 +74,16 @@ impl Tick {
 impl AsRef<Timer> for Tick {
     fn as_ref(&self) -> &Timer {
         &self.timer
+    }
+}
+
+pub fn frequency_increaser(keys: Res<Input<KeyCode>>, mut timer: ResMut<Tick>) {
+    let f = timer.frequency();
+    if keys.just_released(KeyCode::J) {
+        timer.set_frequency(f * 2.);
+    }
+    if keys.just_released(KeyCode::K) {
+        timer.set_frequency(f / 2.);
     }
 }
 
