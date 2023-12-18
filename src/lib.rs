@@ -1,4 +1,4 @@
-#![feature(generators, iter_from_generator, iter_intersperse)]
+#![feature(generators, iter_from_generator, iter_intersperse, let_chains)]
 
 pub mod fifth;
 pub mod second;
@@ -13,8 +13,9 @@ use bevy::{
 use clap::ValueEnum;
 use std::convert::AsRef;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, ValueEnum)]
+#[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, ValueEnum)]
 pub enum Part {
+    #[default]
     One,
     Two,
 }

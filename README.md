@@ -29,5 +29,9 @@ Merry Christmas =)
 
 ### Part One
 
-![Animation of Day 13 part one](img/thirteenth.gif)
+![Animation of Day 13 part one](img/thirteenth-a.gif)
+
+### Part Two
+
+![Animation of Day 13 part two](img/thirteenth-b.gif)
 

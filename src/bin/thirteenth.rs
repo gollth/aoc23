@@ -65,7 +65,7 @@ fn main() -> anyhow::Result<()> {
     println!("Solution part {:?}: {solution}", args.part);
 
     if args.animate {
-        animation::run(grids, args.frequency);
+        animation::run(grids, args.part, args.frequency);
     }
 
     Ok(())

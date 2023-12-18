@@ -50,26 +50,24 @@ impl Grid {
         &self,
         direction: Reflection,
     ) -> Option<((usize, usize), usize, Reflection)> {
-        (1..self.end(direction))
-            .filter_map(|fold| {
-                let (a, b) = self.split(fold, direction);
-                (&a - &b)
-                    .indexed_iter()
-                    .filter(|(_, elem)| elem.abs() == 1)
-                    .map(|((row, col), _)| {
-                        (
-                            match direction {
-                                Reflection::Horizontal => (fold - 1 - row, col),
-                                Reflection::Vertical => (row, fold - col - 1),
-                            },
-                            fold,
-                            direction,
-                        )
-                    })
-                    .exactly_one()
-                    .ok()
-            })
-            .next()
+        (1..self.end(direction)).find_map(|fold| {
+            let (a, b) = self.split(fold, direction);
+            (&a - &b)
+                .indexed_iter()
+                .filter(|(_, elem)| elem.abs() == 1)
+                .map(|((row, col), _)| {
+                    (
+                        match direction {
+                            Reflection::Horizontal => (fold - 1 - row, col),
+                            Reflection::Vertical => (row, fold - col - 1),
+                        },
+                        fold,
+                        direction,
+                    )
+                })
+                .exactly_one()
+                .ok()
+        })
     }
 
     pub fn fold_line(&self, direction: Reflection) -> Option<(Reflection, usize)> {

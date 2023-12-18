@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{frequency_increaser, lerp, lerpc, mouse, rect, toggle_running, Running, Scroll, Tick};
+use crate::{
+    frequency_increaser, lerp, lerpc, mouse, rect, toggle_running, Part, Running, Scroll, Tick,
+};
 
 use super::{Grid, Reflection};
 
@@ -9,6 +11,7 @@ use lazy_static::lazy_static;
 
 const MOTION: f32 = 5.;
 const FOUND_COLOR_TOGGLE: u8 = 2;
+const SMUDGE_COLOR_TOGGLE: u8 = 2;
 const FONT_SIZE: f32 = 40.;
 const TILE_SIZE: f32 = 30.;
 const GRID_GAP: f32 = 3. * TILE_SIZE;
@@ -23,9 +26,11 @@ const CHECK_COLOR: Color = Color::Rgba {
     alpha: 1.,
 };
 const FOUND_COLOR: Color = Color::GREEN;
+const SMUDGE_COLOR: Color = Color::PINK;
 
 #[derive(Debug, Resource, Default)]
 struct GameState {
+    part: Part,
     grids: Vec<Grid>,
     grid: usize,
     split: Reflection,
@@ -38,17 +43,22 @@ struct GameState {
 enum Step {
     #[default]
     Searching,
+    Smudge((u8, (usize, usize))),
     Found(u8),
     Scoring(f32),
     Done,
 }
 
-pub fn run(grids: Vec<Grid>, frequency: f32) {
+pub fn run(grids: Vec<Grid>, part: Part, frequency: f32) {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(Running::default())
         .insert_resource(Tick::new(frequency))
-        .insert_resource(GameState { grids, ..default() })
+        .insert_resource(GameState {
+            part,
+            grids,
+            ..default()
+        })
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -435,15 +445,50 @@ fn cell_colorer(time: Res<Time>, state: Res<GameState>, mut cells: Query<(&Cell,
         .collect::<HashSet<_>>();
 
     for (cell, mut text) in cells.iter_mut().filter(|(cell, _)| cell.grid == state.grid) {
-        let target = if sames.contains(&cell.coord) {
-            match state.step {
-                Step::Searching => CHECK_COLOR,
-                Step::Found(n) if n % 2 == 0 => FOUND_COLOR,
-                Step::Found(_) => CHECK_COLOR,
-                _ => Color::WHITE,
+        let is_same = sames.contains(&cell.coord);
+        let is_even = |n| n % 2 == 0;
+        let opposite = match state.split {
+            Reflection::Horizontal => {
+                if cell.coord.0 < state.fold {
+                    (
+                        cell.coord.0 + 2 * (state.fold - 1 - cell.coord.0) + 1,
+                        cell.coord.1,
+                    )
+                } else {
+                    (
+                        cell.coord
+                            .0
+                            .saturating_sub(2 * (cell.coord.0 - state.fold) + 1),
+                        cell.coord.1,
+                    )
+                }
             }
-        } else {
-            Color::WHITE
+            Reflection::Vertical => {
+                if cell.coord.1 < state.fold {
+                    (
+                        cell.coord.0,
+                        cell.coord.1 + 2 * (state.fold - 1 - cell.coord.1) + 1,
+                    )
+                } else {
+                    (
+                        cell.coord.0,
+                        cell.coord
+                            .1
+                            .saturating_sub(2 * (cell.coord.1 - state.fold) + 1),
+                    )
+                }
+            }
+        };
+        let target = match state.step {
+            Step::Smudge((n, smudge))
+                if (smudge == cell.coord || smudge == opposite) && is_even(n) =>
+            {
+                SMUDGE_COLOR
+            }
+            Step::Searching | Step::Smudge(_) | Step::Found(_) if is_same => CHECK_COLOR,
+            Step::Found(n) if is_same && is_even(n) => FOUND_COLOR,
+            Step::Searching => Color::WHITE,
+            _ => Color::WHITE,
         };
         text.sections[0].style.color =
             lerpc(text.sections[0].style.color, target, 5. * MOTION * dt);
@@ -532,8 +577,8 @@ fn update(
         return;
     }
 
-    state.step = match state.step {
-        Step::Searching => {
+    state.step = match (state.step, state.part) {
+        (Step::Searching, Part::One) => {
             let (a, b) = state.grids[state.grid].split(state.fold, state.split);
             if !a.is_empty() && !b.is_empty() && a == b {
                 Step::Found(FOUND_COLOR_TOGGLE * 2)
@@ -549,7 +594,26 @@ fn update(
                 Step::Searching
             }
         }
-        Step::Found(0) => {
+        (Step::Searching, Part::Two) => match state.grids[state.grid].find_smudge(state.split) {
+            Some((index, smudge, _)) if state.fold == smudge => {
+                Step::Smudge((SMUDGE_COLOR_TOGGLE * 2, index))
+            }
+            _ => {
+                state.fold += 1;
+                if state.split == Reflection::Horizontal
+                    && state.fold > state.grids[state.grid].rows()
+                {
+                    state.split = Reflection::Vertical;
+                    state.fold = 0;
+                }
+
+                Step::Searching
+            }
+        },
+        (Step::Smudge(_), Part::One) => panic!("Smudging should only happen in Part one!"),
+        (Step::Smudge((0, _)), Part::Two) => Step::Found(0),
+        (Step::Smudge((n, i)), Part::Two) => Step::Smudge((n - 1, i)),
+        (Step::Found(0), _) => {
             cmd.spawn((
                 Score,
                 Text2dBundle {
@@ -575,8 +639,8 @@ fn update(
             };
             Step::Scoring(1.)
         }
-        Step::Found(x) => Step::Found(x - 1),
-        Step::Scoring(f) if f < 0.01 => {
+        (Step::Found(x), _) => Step::Found(x - 1),
+        (Step::Scoring(f), _) if f < 0.01 => {
             state.split = Reflection::default();
             state.fold = 0;
             state.grid += 1;
