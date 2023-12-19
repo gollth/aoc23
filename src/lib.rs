@@ -1,6 +1,7 @@
 #![feature(generators, iter_from_generator, iter_intersperse, let_chains)]
 
 pub mod fifth;
+pub mod fourteenth;
 pub mod second;
 pub mod ten;
 pub mod thirteenth;
@@ -19,6 +20,8 @@ pub enum Part {
     One,
     Two,
 }
+
+pub type Coord = euclid::Vector2D<i32, euclid::UnknownUnit>;
 
 pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
     anyhow!("{e}")
@@ -92,8 +95,8 @@ pub fn frequency_increaser(keys: Res<Input<KeyCode>>, mut timer: ResMut<Tick>) {
 pub struct Scroll(pub f32);
 
 const ZOOM_SPEED: f32 = 4.0;
-const ZOOM_SENSITIVITY: f32 = 0.5;
 
+const ZOOM_SENSITIVITY: f32 = 0.1;
 pub fn mouse(
     time: Res<Time>,
     mouse: Res<Input<MouseButton>>,
@@ -132,6 +135,15 @@ pub(crate) fn rect(x: f32, y: f32, z: f32, w: f32, h: f32, color: Color) -> Spri
         transform: Transform::from_xyz(x, y, z),
         ..default()
     }
+}
+
+pub(crate) fn in_states<S>(states: &'static [S]) -> impl Condition<()>
+where
+    S: States,
+{
+    IntoSystem::into_system(|current_state: Res<State<S>>| {
+        states.iter().any(|s| s == current_state.get())
+    })
 }
 
 pub fn cycle<T, I>(mut xs: I) -> Option<(usize, usize)>
