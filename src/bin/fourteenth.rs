@@ -1,16 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Display,
+    fmt::{Debug, Display},
     ops::Not,
     str::FromStr,
 };
 
-use aoc23::Part;
+use aoc23::{cycle, Part};
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use itertools::Itertools;
-use termion::color::{Fg, LightBlue, Reset, Rgb, Yellow};
+use termion::color::{Fg, Reset, Rgb, Yellow};
 
 /// Day 14: Parabolic Reflector Dish
 #[derive(Debug, Parser)]
@@ -27,22 +27,62 @@ fn main() -> Result<()> {
     let args = Options::parse();
     let input = std::fs::read_to_string(args.input)?;
     let mut platform = Platform::from_str(&input)?;
-    let north = Coord::new(0, -1);
 
-    platform.tilt(north);
-    println!("{platform}");
-    println!("Solution: {}", platform.total_north_load());
+    let mut states = Vec::new();
 
+    let solution = match args.part {
+        Part::One => {
+            platform.tilt(NORTH);
+            platform.total_north_load()
+        }
+        Part::Two => {
+            let until = loop {
+                for dir in CYCLE.iter() {
+                    platform.tilt(*dir);
+                }
+                states.push(platform.total_north_load());
+
+                if let Some((mu, lambda)) = cycle(states.iter()) {
+                    break ((1_000_000_000 - mu) % lambda) + mu;
+                }
+            };
+
+            // Reset
+            platform = Platform::from_str(&input)?;
+            for _ in 0..until {
+                for dir in CYCLE.iter() {
+                    platform.tilt(*dir);
+                }
+            }
+            platform.total_north_load()
+        }
+    };
+
+    println!("Solution part {:?} {solution}", args.part);
     Ok(())
 }
 
 type Coord = euclid::Vector2D<i32, euclid::UnknownUnit>;
+const NORTH: Coord = Coord::new(0, -1);
+const SOUTH: Coord = Coord::new(0, 1);
+const EAST: Coord = Coord::new(1, 0);
+const WEST: Coord = Coord::new(-1, 0);
 
+const CYCLE: [Coord; 4] = [NORTH, WEST, SOUTH, EAST];
+
+#[derive(Debug, Clone)]
 struct Platform {
     rocks: HashMap<Coord, Rock>,
-    settled: HashSet<Coord>,
     nrows: i32,
     ncols: i32,
+}
+
+impl PartialEq for Platform {
+    fn eq(&self, other: &Self) -> bool {
+        self.ncols == other.ncols
+            && self.nrows == other.nrows
+            && self.round_rocks() == other.round_rocks()
+    }
 }
 
 #[derive(Default, Debug, PartialEq, Copy, Clone, Eq)]
@@ -61,11 +101,46 @@ impl Platform {
         self.rocks.get(&c).copied().unwrap_or_default()
     }
 
+    fn outer(&self, dir: Coord) -> i32 {
+        if dir == NORTH || dir == SOUTH {
+            return self.ncols;
+        }
+        if dir == EAST || dir == WEST {
+            return self.nrows;
+        }
+        panic!("Only N,S,W or E directions supported")
+    }
+
+    fn inner_iter(&self, dir: Coord) -> Box<dyn Iterator<Item = i32>> {
+        if dir == NORTH {
+            Box::new(-1..=self.nrows)
+        } else if dir == SOUTH {
+            Box::new((-1..=self.nrows).rev())
+        } else if dir == EAST {
+            Box::new((-1..=self.ncols).rev())
+        } else if dir == WEST {
+            Box::new(-1..=self.ncols)
+        } else {
+            panic!("Only N,S,W or E directions supported")
+        }
+    }
+
+    fn coord(&self, dir: Coord, outer: i32, inner: i32) -> Coord {
+        if dir == NORTH || dir == SOUTH {
+            Coord::new(outer, inner)
+        } else if dir == EAST || dir == WEST {
+            Coord::new(inner, outer)
+        } else {
+            panic!("Only N,S,W or E directions supported")
+        }
+    }
+
     fn tilt(&mut self, dir: Coord) {
         let mut rocks = HashMap::new();
-        for col in 0..self.ncols {
-            let new_coords = (-1..self.nrows)
-                .map(move |y| Coord::new(col, y))
+        for outer in 0..self.outer(dir) {
+            let new_coords = self
+                .inner_iter(dir)
+                .map(|inner| self.coord(dir, outer, inner))
                 .map(|c| (c, self.get(c)))
                 .group_by(|(_, r)| r == &Rock::Square)
                 .into_iter()
@@ -96,6 +171,14 @@ impl Platform {
             .map(|(coord, _)| self.nrows - coord.y)
             .sum()
     }
+    fn round_rocks(&self) -> HashSet<Coord> {
+        self.rocks
+            .iter()
+            .filter(|(_, rock)| rock == &&Rock::Round)
+            .map(|(coord, _)| coord)
+            .copied()
+            .collect()
+    }
 }
 
 impl FromStr for Platform {
@@ -123,7 +206,6 @@ impl FromStr for Platform {
             rocks,
             ncols,
             nrows,
-            settled: HashSet::new(),
         })
     }
 }
@@ -140,9 +222,7 @@ impl Display for Platform {
             for x in -1..=self.ncols {
                 let coord = Coord::new(x, y);
                 let rock = self.get(coord);
-                if self.settled.contains(&coord) {
-                    write!(f, "{}", Fg(LightBlue))?;
-                } else if rock == Rock::Square {
+                if rock == Rock::Square {
                     write!(f, "{}", Fg(Rgb(160, 160, 160)))?;
                 } else if rock == Rock::Round {
                     write!(f, "{}", Fg(Yellow))?;
@@ -190,7 +270,6 @@ impl Display for Rock {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use rstest::rstest;
 
     #[rstest]
@@ -198,14 +277,13 @@ mod tests {
         let input = include_str!("../../sample/fourteenth.txt");
         let mut platform = Platform::from_str(input).expect("parsing");
 
-        let north = Coord::new(0, -1);
-
-        platform.tilt(north);
+        platform.tilt(NORTH);
         assert_eq!(136, platform.total_north_load(), "Platform:\n{platform}");
     }
 
     #[rstest]
     #[case(
+        NORTH,
         "OOOO.#.O..
          OO..#....#
          OO..O##..O
@@ -217,7 +295,107 @@ mod tests {
          #....###..
          #....#...."
     )]
-    fn sample_a_manual(#[case] platform: Platform) {
-        assert_eq!(136, platform.total_north_load(), "Platform:\n{platform}");
+    #[case(
+        SOUTH,
+        ".....#....
+         ....#....#
+         ...O.##...
+         ...#......
+         O.O....O#O
+         O.#..O.#.#
+         O....#....
+         OO....OO..
+         #OO..###..
+         #OO.O#...O"
+    )]
+    #[case(
+        EAST,
+        "....O#....
+         .OOO#....#
+         .....##...
+         .OO#....OO
+         ......OO#.
+         .O#...O#.#
+         ....O#..OO
+         .........O
+         #....###..
+         #..OO#...."
+    )]
+    #[case(
+        WEST,
+        "O....#....
+         OOO.#....#
+         .....##...
+         OO.#OO....
+         OO......#.
+         O.#O...#.#
+         O....#OO..
+         O.........
+         #....###..
+         #OO..#...."
+    )]
+    fn sample_a_manual(#[case] tilt_dir: Coord, #[case] expected: Platform) {
+        let input = include_str!("../../sample/fourteenth.txt");
+        let mut platform = Platform::from_str(input).expect("parsing");
+
+        platform.tilt(tilt_dir);
+        assert_eq!(
+            expected.round_rocks(),
+            platform.round_rocks(),
+            "Platform:\n{platform}\n\nExpected\n{expected}"
+        );
+    }
+
+    #[rstest]
+    #[case(
+        1,
+        ".....#....
+         ....#...O#
+         ...OO##...
+         .OO#......
+         .....OOO#.
+         .O#...O#.#
+         ....O#....
+         ......OOOO
+         #...O###..
+         #..OO#...."
+    )]
+    #[case(
+        2,
+        ".....#....
+         ....#...O#
+         .....##...
+         ..O#......
+         .....OOO#.
+         .O#...O#.#
+         ....O#...O
+         .......OOO
+         #..OO###..
+         #.OOO#...O"
+    )]
+    #[case(
+        3,
+        ".....#....
+         ....#...O#
+         .....##...
+         ..O#......
+         .....OOO#.
+         .O#...O#.#
+         ....O#...O
+         .......OOO
+         #...O###.O
+         #.OOO#...O"
+    )]
+    fn sample_b_manual(#[case] cycles: usize, #[case] expected: Platform) {
+        let input = include_str!("../../sample/fourteenth.txt");
+        let mut platform = Platform::from_str(input).expect("parsing");
+
+        for dir in CYCLE.iter().cycle().take(CYCLE.len() * cycles) {
+            platform.tilt(*dir);
+        }
+        assert_eq!(
+            expected, platform,
+            "Platform:\n{platform}\n\nExpected\n{expected}"
+        );
     }
 }

@@ -133,3 +133,54 @@ pub(crate) fn rect(x: f32, y: f32, z: f32, w: f32, h: f32, color: Color) -> Spri
         ..default()
     }
 }
+
+pub fn cycle<T, I>(mut xs: I) -> Option<(usize, usize)>
+where
+    T: PartialEq,
+    I: Iterator<Item = T> + Clone,
+{
+    // Let hare run twice as fast as tortoise until they meet
+    let mut tortoise = xs.clone();
+    let mut hare = xs.clone();
+    hare.next();
+    while tortoise.next()? != hare.next()? {
+        hare.next()?;
+    }
+
+    // Reset tortoise to beginning at let both run in same speed until they meet, to find offset (mu)
+    let mut mu = 0;
+    let mut tortoise = xs.clone();
+    while tortoise.next()? != hare.next()? {
+        mu += 1;
+    }
+
+    // Let hare run one step at a time and tortoise rest to find length of cycle (lambda)
+    let mut lambda = 1;
+    let x_mu = xs.nth(mu)?;
+
+    while hare.next()? != x_mu {
+        lambda += 1
+    }
+
+    Some((mu, lambda))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use std::iter::{empty, once};
+
+    #[rstest]
+    #[case(None, empty())]
+    #[case(None, 1..6)]
+    #[case(Some((0, 3)), (1..=3).cycle())]
+    #[case(Some((1, 3)), once(17).chain((1..=3).cycle()))]
+    #[case(Some((5, 6)), (42..=46).chain((1..=6).cycle()))]
+    fn tortoise_hare(
+        #[case] expected: Option<(usize, usize)>,
+        #[case] xs: impl Iterator<Item = i32> + Clone,
+    ) {
+        assert_eq!(expected, cycle(xs));
+    }
+}
