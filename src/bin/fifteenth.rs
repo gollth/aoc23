@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hasher, iter::repeat};
+use std::{array, hash::Hasher, iter::repeat};
 
 use anyhow::Result;
 use aoc23::{anyhowing, Part};
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
             })
             .sum::<u64>(),
         Part::Two => {
-            let facility = Facility::from_str(&input)?;
+            let facility = HashMap::from_str(&input)?;
             facility.focal_power()
         }
     };
@@ -53,35 +53,33 @@ type FocalLength = u64;
 type Box<'a> = Vec<(Label<'a>, FocalLength)>;
 type Instruction<'a> = (Label<'a>, Operation);
 
-struct Facility<'a>(HashMap<u8, Box<'a>>);
+const N: usize = 256;
+struct HashMap<'a>([Box<'a>; N]);
 
-impl<'a> FromIterator<Instruction<'a>> for Facility<'a> {
+impl<'a> FromIterator<Instruction<'a>> for HashMap<'a> {
     fn from_iter<T: IntoIterator<Item = Instruction<'a>>>(iter: T) -> Self {
-        Self(
-            iter.into_iter()
-                .fold(HashMap::new(), |mut map, (label, operation)| {
-                    // println!("Label {label} ({}): {operation:?}", hash(label));
-                    match operation {
-                        Operation::Remove => {
-                            if let Some(box_) = map.get_mut(&hash(label)) {
-                                box_.retain(|lens| lens.0 != label);
-                            }
+        Self(iter.into_iter().fold(
+            array::from_fn(|_| Vec::default()),
+            |mut map, (label, operation)| {
+                match operation {
+                    Operation::Remove => {
+                        map[hash(label)].retain(|lens| lens.0 != label);
+                    }
+                    Operation::Insert(fl) => {
+                        let item = &mut map[hash(label)];
+                        match item.iter_mut().find(|(l, _)| label == *l) {
+                            Some(lens) => lens.1 = fl,
+                            None => item.push((label, fl)),
                         }
-                        Operation::Insert(fl) => {
-                            let box_ = map.entry(hash(label)).or_default();
-                            match box_.iter_mut().find(|(l, _)| label == *l) {
-                                Some(lens) => lens.1 = fl,
-                                None => box_.push((label, fl)),
-                            }
-                        }
-                    };
-                    map
-                }),
-        )
+                    }
+                };
+                map
+            },
+        ))
     }
 }
 
-impl<'a> Facility<'a> {
+impl<'a> HashMap<'a> {
     fn from_str(s: &'a str) -> Result<Self> {
         Ok(instructions(s)
             .finish()
@@ -94,10 +92,10 @@ impl<'a> Facility<'a> {
     fn focal_power(&self) -> u64 {
         self.0
             .iter()
+            .enumerate()
             .flat_map(|(box_, lenses)| {
-                izip!(repeat(1 + *box_ as u64), 1.., lenses)
+                izip!(repeat(1 + box_ as u64), 1.., lenses)
                     .map(|(box_nr, slot, (_, focal_length))| box_nr * slot * focal_length)
-                // .inspect(|x| println!(">> {x:?}"))
             })
             .sum()
     }
@@ -133,10 +131,10 @@ fn instructions(s: &str) -> IResult<&str, Vec<(Label<'_>, Operation)>> {
 #[allow(clippy::upper_case_acronyms)]
 struct HASH(u8);
 
-fn hash(s: &str) -> u8 {
+fn hash(s: &str) -> usize {
     let mut h = HASH::default();
     h.write(s.as_bytes());
-    h.finish() as u8
+    h.finish() as usize
 }
 
 impl Hasher for HASH {
@@ -213,7 +211,7 @@ mod tests {
     #[rstest]
     fn sample_b() {
         let input = include_str!("../../sample/fifteenth.txt");
-        let facility = Facility::from_str(input).expect("parsing");
+        let facility = HashMap::from_str(input).expect("parsing");
         assert_eq!(145, facility.focal_power());
     }
 }
