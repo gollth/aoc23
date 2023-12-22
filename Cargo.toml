@@ -8,6 +8,7 @@ anyhow = "1.0.75"
 bevy = { version = "0.12.1", features = ["dynamic_linking"] }
 bevy_rapier2d = { version = "0.23.0", features = ["debug-render-2d"] }
 clap = { version = "4.4.10", features = ["derive"] }
+derive_more = "0.99.17"
 enum-iterator = "1.4.1"
 euclid = "0.22.9"
 indicatif = "0.17.7"
