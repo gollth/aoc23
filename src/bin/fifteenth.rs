@@ -1,8 +1,8 @@
-use std::hash::Hasher;
+use std::{hash::Hasher, str::FromStr};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use aoc23::{
-    fifteenth::{HashMap, HASH},
+    fifteenth::{animation, HashMap, HASH},
     Part,
 };
 use clap::Parser;
@@ -16,12 +16,21 @@ struct Options {
 
     /// Which part of the day to solve
     part: Part,
+
+    /// Should the solution be animated?
+    #[clap(short, long)]
+    animate: bool,
+
+    /// How fast shall the animation run initially
+    #[clap(short, long, default_value_t = 1.5)]
+    frequency: f32,
 }
 
 fn main() -> Result<()> {
     let args = Options::parse();
     let input = std::fs::read_to_string(args.input)?;
     let solution = match args.part {
+        Part::One if args.animate => return Err(anyhow!("Part one cannot be animated")),
         Part::One => input
             .lines()
             .map(|line| {
@@ -31,8 +40,13 @@ fn main() -> Result<()> {
             })
             .sum::<u64>(),
         Part::Two => {
-            let facility = HashMap::from_str(&input)?;
-            facility.focal_power()
+            if args.animate {
+                animation::run(args.frequency, HashMap::default(), &input);
+                0
+            } else {
+                let facility = HashMap::from_str(&input)?;
+                facility.focal_power()
+            }
         }
     };
     println!("Solution part {:?}: {solution}", args.part);

@@ -17,13 +17,13 @@ pub(crate) fn operation(s: &str) -> IResult<&str, Operation> {
         .parse(s)
 }
 
-pub(crate) fn label(s: &str) -> IResult<&str, Label<'_>> {
-    alpha1(s)
+pub(crate) fn label(s: &str) -> IResult<&str, Label> {
+    alpha1.map(String::from).parse(s)
 }
-pub(crate) fn instruction(s: &str) -> IResult<&str, (Label<'_>, Operation)> {
+pub(crate) fn instruction(s: &str) -> IResult<&str, (Label, Operation)> {
     tuple((label, operation)).parse(s)
 }
 
-pub(crate) fn instructions(s: &str) -> IResult<&str, Vec<(Label<'_>, Operation)>> {
+pub(crate) fn instructions(s: &str) -> IResult<&str, Vec<(Label, Operation)>> {
     separated_list1(char(','), instruction).parse(s)
 }

@@ -1,4 +1,10 @@
-#![feature(generators, iter_from_generator, iter_intersperse, let_chains)]
+#![feature(
+    generators,
+    iter_from_generator,
+    iter_intersperse,
+    let_chains,
+    iter_array_chunks
+)]
 
 pub mod fifteenth;
 pub mod fifth;
@@ -11,6 +17,7 @@ use anyhow::anyhow;
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
+    render::{mesh::Indices, render_resource::PrimitiveTopology},
 };
 use clap::ValueEnum;
 use std::convert::AsRef;
@@ -31,11 +38,19 @@ pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
 pub(crate) fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
-pub(crate) fn lerpc(a: Color, b: Color, t: f32) -> Color {
+pub(crate) fn lerprgb(a: Color, b: Color, t: f32) -> Color {
     Color::rgba(
         lerp(a.r(), b.r(), t),
         lerp(a.g(), b.g(), t),
         lerp(a.b(), b.b(), t),
+        lerp(a.a(), b.a(), t),
+    )
+}
+pub(crate) fn lerphsl(a: Color, b: Color, t: f32) -> Color {
+    Color::hsla(
+        lerp(a.h(), b.h(), t),
+        lerp(a.s(), b.s(), t),
+        lerp(a.l(), b.l(), t),
         lerp(a.a(), b.a(), t),
     )
 }
@@ -136,6 +151,39 @@ pub(crate) fn rect(x: f32, y: f32, z: f32, w: f32, h: f32, color: Color) -> Spri
         transform: Transform::from_xyz(x, y, z),
         ..default()
     }
+}
+
+pub(crate) fn arc_segment(n: usize, arc: &ArcSegment) -> Mesh {
+    let mut vertices = Vec::new();
+    let mut faces = Vec::new();
+
+    for i in 0..n {
+        let t = arc.phi + arc.alpha * (i as f32 / (n - 1) as f32);
+        let (x, y) = t.sin_cos();
+        vertices.push([arc.ro * x, arc.ro * y, 0.]);
+        vertices.push([arc.ri * x, arc.ri * y, 0.]);
+    }
+
+    for i in (0..2 * n as u32).step_by(2) {
+        faces.extend_from_slice(&[i, i + 1, i + 3]);
+        faces.extend_from_slice(&[i, i + 3, i + 2]);
+    }
+
+    Mesh::new(PrimitiveTopology::TriangleList)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
+        .with_indices(Some(Indices::U32(faces)))
+}
+
+#[derive(Default, Debug, Component, Clone, PartialEq)]
+pub(crate) struct ArcSegment {
+    /// Offset
+    phi: f32,
+    /// Length
+    alpha: f32,
+    /// Inner radius
+    ri: f32,
+    /// Outer radius
+    ro: f32,
 }
 
 pub(crate) fn in_states<S>(states: &'static [S]) -> impl Condition<()>

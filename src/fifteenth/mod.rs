@@ -1,51 +1,46 @@
-use std::{array, hash::Hasher, iter::repeat};
+use std::{array, fmt::Display, hash::Hasher, iter::repeat, str::FromStr};
 
 use crate::anyhowing;
 use anyhow::Result;
+use bevy::ecs::system::Resource;
 use derive_more::{Add, AsRef, From, Into, Sum};
 use itertools::izip;
 use nom::Finish;
 
 use self::parser::instructions;
 
-mod animation;
+pub mod animation;
 mod parser;
 
-type Label<'a> = &'a str;
+type Label = String;
 type FocalLength = u64;
-type Box<'a> = Vec<(Label<'a>, FocalLength)>;
-type Instruction<'a> = (Label<'a>, Operation);
+type Box = Vec<(Label, FocalLength)>;
+type Instruction = (Label, Operation);
 
-const N: usize = 256;
-pub struct HashMap<'a>([Box<'a>; N]);
+pub(crate) const N: usize = 256;
 
-impl<'a> FromIterator<Instruction<'a>> for HashMap<'a> {
-    fn from_iter<T: IntoIterator<Item = Instruction<'a>>>(iter: T) -> Self {
-        Self(iter.into_iter().fold(
-            array::from_fn(|_| Vec::default()),
-            |mut map, (label, operation)| {
-                match operation {
-                    Operation::Remove => {
-                        map[hash(label)].retain(|lens| lens.0 != label);
-                    }
-                    Operation::Insert(fl) => {
-                        let item = &mut map[hash(label)];
-                        match item.iter_mut().find(|(l, _)| label == *l) {
-                            Some(lens) => lens.1 = fl,
-                            None => item.push((label, fl)),
-                        }
-                    }
-                };
-                map
-            },
-        ))
+#[derive(Debug, Resource)]
+pub struct HashMap([Box; N]);
+
+impl FromIterator<Instruction> for HashMap {
+    fn from_iter<T: IntoIterator<Item = Instruction>>(iter: T) -> Self {
+        let mut me = Self::default();
+        for instruction in iter {
+            me.process(instruction);
+        }
+        me
+    }
+}
+impl Default for HashMap {
+    fn default() -> Self {
+        Self(array::from_fn(|_| Vec::default()))
     }
 }
 
-impl<'a> HashMap<'a> {
-    #[allow(clippy::should_implement_trait)] // whole point is to be similar. Unable to implement
-                                             // FromStr directly because of lifetime
-    pub fn from_str(s: &'a str) -> Result<Self> {
+impl FromStr for HashMap {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(instructions(s)
             .finish()
             .map_err(anyhowing)?
@@ -53,7 +48,9 @@ impl<'a> HashMap<'a> {
             .into_iter()
             .collect())
     }
+}
 
+impl HashMap {
     pub fn focal_power(&self) -> u64 {
         self.0
             .iter()
@@ -64,12 +61,43 @@ impl<'a> HashMap<'a> {
             })
             .sum()
     }
+
+    pub fn get(&self, key: &str) -> impl Iterator<Item = &(Label, FocalLength)> {
+        self.index(hash(key) as u8)
+    }
+    pub fn index(&self, i: u8) -> impl Iterator<Item = &(Label, FocalLength)> {
+        self.0[i as usize].iter()
+    }
+
+    pub(crate) fn process(&mut self, (label, operation): Instruction) {
+        match operation {
+            Operation::Remove => {
+                self.0[hash(&label)].retain(|lens| lens.0 != label);
+            }
+            Operation::Insert(fl) => {
+                let item = &mut self.0[hash(&label)];
+                match item.iter_mut().find(|(l, _)| label == *l) {
+                    Some(lens) => lens.1 = fl,
+                    None => item.push((label, fl)),
+                }
+            }
+        };
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum Operation {
+pub(crate) enum Operation {
     Remove,
     Insert(FocalLength),
+}
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Remove => write!(f, "-"),
+            Self::Insert(l) => write!(f, "={l}"),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, From, Into, Add, Sum, AsRef)]
@@ -121,11 +149,11 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case("rn=1", Ok(("",("rn", Operation::Insert(1)))))]
-    #[case("cm-", Ok(("",("cm", Operation::Remove))))]
-    #[case("qp=3", Ok(("",("qp", Operation::Insert(3)))))]
-    #[case("foobar=3,blub", Ok((",blub",("foobar", Operation::Insert(3)))))]
-    fn sample_b_parsing(#[case] input: &str, #[case] expected: IResult<&str, (&str, Operation)>) {
+    #[case("rn=1", Ok(("",(String::from("rn"), Operation::Insert(1)))))]
+    #[case("cm-", Ok(("",(String::from("cm"), Operation::Remove))))]
+    #[case("qp=3", Ok(("",(String::from("qp"), Operation::Insert(3)))))]
+    #[case("foobar=3,blub", Ok((",blub",(String::from("foobar"), Operation::Insert(3)))))]
+    fn sample_b_parsing(#[case] input: &str, #[case] expected: IResult<&str, (String, Operation)>) {
         assert_eq!(expected, instruction(input));
     }
 }

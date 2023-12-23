@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    frequency_increaser, lerp, lerpc, mouse, rect, toggle_running, Part, Running, Scroll, Tick,
+    frequency_increaser, lerp, lerprgb, mouse, rect, toggle_running, Part, Running, Scroll, Tick,
 };
 
 use super::{Grid, Reflection};
@@ -491,7 +491,7 @@ fn cell_colorer(time: Res<Time>, state: Res<GameState>, mut cells: Query<(&Cell,
             _ => Color::WHITE,
         };
         text.sections[0].style.color =
-            lerpc(text.sections[0].style.color, target, 5. * MOTION * dt);
+            lerprgb(text.sections[0].style.color, target, 5. * MOTION * dt);
     }
 }
 
