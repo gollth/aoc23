@@ -10,22 +10,16 @@ use std::{
 
 use anyhow::anyhow;
 use bevy::prelude::{Component, Resource};
-use enum_iterator::{all, next_cycle, previous_cycle, Sequence};
+use enum_iterator::all;
 use itertools::Itertools;
 use termion::color::{Fg, LightYellow, Red, Reset, Rgb};
+
+use crate::Direction;
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, Hash, Component)]
 pub struct Coord {
     x: i32,
     y: i32,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Sequence)]
-enum Direction {
-    Up,
-    Right,
-    Down,
-    Left,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -46,15 +40,6 @@ pub struct Maze {
     size: Coord,
     path: Vec<Coord>,
     inside: HashSet<Coord>,
-}
-
-impl Direction {
-    fn cw(&self) -> Self {
-        next_cycle(self).unwrap()
-    }
-    fn ccw(&self) -> Self {
-        previous_cycle(self).unwrap()
-    }
 }
 
 impl From<Pipe> for usize {
@@ -302,16 +287,5 @@ impl Debug for Maze {
             writeln!(f)?;
         }
         Ok(())
-    }
-}
-
-impl Debug for Direction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Self::Up => write!(f, "↑"),
-            Self::Right => write!(f, "→"),
-            Self::Left => write!(f, "←"),
-            Self::Down => write!(f, "↓"),
-        }
     }
 }

@@ -20,7 +20,8 @@ use bevy::{
     render::{mesh::Indices, render_resource::PrimitiveTopology},
 };
 use clap::ValueEnum;
-use std::convert::AsRef;
+use enum_iterator::{next_cycle, previous_cycle, Sequence};
+use std::{convert::AsRef, fmt::Debug};
 
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, ValueEnum)]
 pub enum Part {
@@ -35,6 +36,44 @@ pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
     anyhow!("{e}")
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Sequence)]
+pub enum Direction {
+    Up,
+    Right,
+    Down,
+    Left,
+}
+
+impl Direction {
+    pub fn cw(&self) -> Self {
+        next_cycle(self).unwrap()
+    }
+    pub fn ccw(&self) -> Self {
+        previous_cycle(self).unwrap()
+    }
+}
+
+impl Debug for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Up => write!(f, "↑"),
+            Self::Right => write!(f, "→"),
+            Self::Left => write!(f, "←"),
+            Self::Down => write!(f, "↓"),
+        }
+    }
+}
+impl From<Direction> for Coord {
+    fn from(dir: Direction) -> Self {
+        match dir {
+            Direction::Up => Coord::new(0, -1),
+            Direction::Down => Coord::new(0, 1),
+            Direction::Left => Coord::new(-1, 0),
+            Direction::Right => Coord::new(1, 0),
+        }
+    }
+}
+
 pub(crate) fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
@@ -46,7 +85,7 @@ pub(crate) fn lerprgb(a: Color, b: Color, t: f32) -> Color {
         lerp(a.a(), b.a(), t),
     )
 }
-pub(crate) fn lerphsl(a: Color, b: Color, t: f32) -> Color {
+pub fn lerphsl(a: Color, b: Color, t: f32) -> Color {
     Color::hsla(
         lerp(a.h(), b.h(), t),
         lerp(a.s(), b.s(), t),
