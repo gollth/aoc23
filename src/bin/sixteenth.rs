@@ -14,6 +14,8 @@ use aoc23::{lerphsl, Coord, Direction, Part};
 use bevy::render::color::Color;
 use clap::Parser;
 use enum_iterator::all;
+use rayon::{iter::repeat as par_repeat, prelude::*};
+
 use termion::color::{Fg, Reset, Rgb};
 
 /// Day 16: The Floor Will Be Lava
@@ -39,6 +41,34 @@ fn main() -> anyhow::Result<()> {
     let input = std::fs::read_to_string(args.input)?;
 
     let mut contraption = Contraption::from_str(&input)?;
+    match args.part {
+        Part::One => contraption.set_entry(PART_ONE_ENTRY)?,
+        Part::Two => {
+            let best_entry = par_repeat(Direction::Right)
+                .zip(0..contraption.nrows)
+                .chain(par_repeat(Direction::Up).zip(0..contraption.ncols))
+                .chain(par_repeat(Direction::Left).zip(0..contraption.nrows).rev())
+                .chain(par_repeat(Direction::Down).zip(0..contraption.ncols).rev())
+                .map(|entry| {
+                    let mut contraption = Contraption::from_str(&input).expect("parsing");
+                    contraption.set_entry(entry).unwrap();
+
+                    while !contraption.is_in_equilibrium() {
+                        contraption.advance();
+                    }
+                    (entry, contraption.energized_cells().len())
+                })
+                .max_by_key(|(_, energized_cells)| *energized_cells)
+                .ok_or(anyhow!("No best entry found"))?;
+            println!(
+                "Found best entry at {:?} leading to {} energized cells",
+                best_entry.0, best_entry.1
+            );
+
+            contraption.reset();
+            contraption.set_entry(best_entry.0)?;
+        }
+    };
 
     while !contraption.is_in_equilibrium() {
         contraption.advance();
@@ -58,6 +88,8 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+const PART_ONE_ENTRY: (Direction, i32) = (Direction::Right, 0);
 
 struct Contraption {
     cells: HashMap<Coord, Mirror>,
@@ -114,16 +146,12 @@ impl Ray {
     }
 }
 impl Beam {
-    fn new(x: i32, y: i32, direction: Direction, hue: f32, ncols: i32, nrows: i32) -> Self {
-        let latest = Ray {
-            coord: Coord::new(x, y),
-            direction,
-        };
+    fn new(ray: Ray, hue: f32, ncols: i32, nrows: i32) -> Self {
         let rays = HashSet::default();
         let color = Color::hsl(hue, 1., 0.5);
         Self {
             rays,
-            latest,
+            latest: ray,
             color,
             nrows,
             ncols,
@@ -136,8 +164,8 @@ impl Beam {
     }
 
     fn advance(&mut self, cells: &HashMap<Coord, Mirror>) -> Option<Beam> {
-        use Direction::{Down, Left, Right, Up};
         self.rays.insert(self.latest.clone());
+        use Direction::{Down, Left, Right, Up};
         let (new_beam, next) = match (cells.get(&self.latest.coord), self.latest.direction) {
             (None, _) => (None, self.latest.cast()), // empty space, simply cast the ray forward
             (Some(Mirror::Slash), Right | Left) => (None, self.latest.ccw().cast()),
@@ -151,9 +179,7 @@ impl Beam {
                 let me = self.latest.ccw();
                 (
                     Some(Beam::new(
-                        other.coord.x,
-                        other.coord.y,
-                        other.direction,
+                        other,
                         (self.color.h() + 45.) % 360.,
                         self.ncols,
                         self.nrows,
@@ -168,6 +194,23 @@ impl Beam {
 }
 
 impl Contraption {
+    fn reset(&mut self) {
+        self.active.clear();
+        self.closed.clear();
+    }
+    fn set_entry(&mut self, (dir, i): (Direction, i32)) -> anyhow::Result<()> {
+        if !self.active.is_empty() {
+            return Err(anyhow!(
+                "Setting a new entry is only allowed before the contraption ever advanced"
+            ));
+        }
+
+        let ray = Ray::new(Coord::from(dir.cw()).abs() * i, dir);
+        self.active = [Beam::new(ray, 0., self.ncols, self.nrows)]
+            .into_iter()
+            .collect();
+        Ok(())
+    }
     fn energized_cells(&self) -> HashSet<Coord> {
         self.closed
             .iter()
@@ -228,9 +271,7 @@ impl FromStr for Contraption {
             cells,
             ncols,
             nrows,
-            active: [Beam::new(0, 0, Direction::Right, 0., ncols, nrows)]
-                .into_iter()
-                .collect(),
+            active: VecDeque::new(),
             closed: Vec::new(),
         })
     }
@@ -315,15 +356,17 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case(46, include_str!("../../sample/sixteenth.txt"))]
+    #[case(46, PART_ONE_ENTRY, include_str!("../../sample/sixteenth.txt"))]
     #[case(
         9,
+        PART_ONE_ENTRY,
         "..|..
          .....
          ..-.."
     )]
     #[case(
         18,
+        PART_ONE_ENTRY,
         r#"...\...
            .......
            -......
@@ -332,6 +375,7 @@ mod tests {
     )]
     #[case(
         16,
+        PART_ONE_ENTRY,
         "|....-
          ......
          ......
@@ -339,15 +383,18 @@ mod tests {
     )]
     #[case(
         41,
+        PART_ONE_ENTRY,
         r#"......|...\..\...
            ..../........|...
            ....\.-.../......
            ......|....../...
            ................."#
     )]
-    fn sample_a(#[case] expectation: usize, #[case] input: &str) {
+    #[case(51, (Direction::Down,3), include_str!("../../sample/sixteenth.txt"))]
+    fn sample(#[case] expectation: usize, #[case] entry: (Direction, i32), #[case] input: &str) {
         let mut max_steps = 100;
         let mut contraption = Contraption::from_str(input).expect("parsing");
+        contraption.set_entry(entry).expect("setting entry");
         println!(
             "Contraption Size: {}/{}",
             contraption.ncols, contraption.nrows
@@ -373,5 +420,28 @@ mod tests {
             max_steps -= 1;
         }
         assert_eq!(expectation, contraption.energized_cells().len())
+    }
+
+    #[rstest]
+    fn sample_b() {
+        let input = include_str!("../../sample/sixteenth.txt");
+        let contraption = Contraption::from_str(input).expect("parsing");
+        let best_entry = par_repeat(Direction::Right)
+            .zip(0..contraption.nrows)
+            .chain(par_repeat(Direction::Up).zip(0..contraption.ncols))
+            .chain(par_repeat(Direction::Left).zip(0..contraption.nrows).rev())
+            .chain(par_repeat(Direction::Down).zip(0..contraption.ncols).rev())
+            .map(|entry| {
+                let mut contraption = Contraption::from_str(input).expect("parsing");
+                contraption.set_entry(entry).unwrap();
+
+                while !contraption.is_in_equilibrium() {
+                    contraption.advance();
+                }
+                (entry, contraption.energized_cells().len())
+            })
+            .max_by_key(|(_, energized_cells)| *energized_cells);
+
+        assert_eq!(Some(((Direction::Down, 3), 51)), best_entry);
     }
 }
