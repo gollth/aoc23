@@ -10,6 +10,7 @@ pub mod fifteenth;
 pub mod fifth;
 pub mod fourteenth;
 pub mod second;
+pub mod sixteenth;
 pub mod ten;
 pub mod thirteenth;
 
@@ -31,6 +32,10 @@ pub enum Part {
 }
 
 pub type Coord = euclid::Vector2D<i32, euclid::UnknownUnit>;
+
+pub fn coord2vec(coord: Coord) -> Vec2 {
+    Vec2::new(coord.x as f32, -coord.y as f32)
+}
 
 pub fn anyhowing(e: nom::error::Error<&str>) -> anyhow::Error {
     anyhow!("{e}")

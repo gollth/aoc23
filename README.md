@@ -46,3 +46,9 @@ Merry Christmas =)
 ![Animation of Day 15](img/fifteenth.gif)
 
 
+## Day 16 
+
+### Part One
+
+![Animation of Day 16 part one](img/sixteenth.gif)
+

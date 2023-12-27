@@ -18,6 +18,7 @@ ndarray = "0.15.6"
 nom = "7.0.0"
 nom-supreme = "0.8.0"
 num = "0.4.1"
+rand = "0.8.5"
 rayon = "1.8.0"
 termion = "2.0.3"
 
